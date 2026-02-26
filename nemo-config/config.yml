@@ -1,0 +1,11 @@
+# Single config: input + output rails, no LLM (use mock or external LLM).
+colang_version: "1.0"
+
+rails:
+  input:
+    flows:
+      - check input rail
+  output:
+    flows:
+      - check output rail
+      - allow output

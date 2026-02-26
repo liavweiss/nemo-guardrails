@@ -1,0 +1,45 @@
+# Colang 1.x — input + output rails (no LLM in config; use mock or external).
+# Flow: user input → check input rail → bot $bot_message. Output rails run automatically on the bot message.
+
+define user input
+  "..."
+
+define flow
+  user input
+  check input rail
+  bot $bot_message
+
+define bot blocked_harmful
+  "I cannot help with that request as it may be harmful or illegal."
+
+define bot blocked_sensitive
+  "Please do not share passwords, API keys, or other sensitive data in chat."
+
+define bot allow
+  "Request allowed."
+
+define bot blocked_output
+  "Response blocked: the answer contained harmful or disallowed content."
+
+define subflow check input rail
+  """Block on harmful or sensitive user input."""
+  run $harmful = check_harmful_keywords(text=$user_message)
+  if $harmful
+    bot blocked_harmful
+    stop
+  run $sensitive = check_sensitive_patterns(text=$user_message)
+  if $sensitive
+    bot blocked_sensitive
+    stop
+
+define subflow check output rail
+  """Block if the bot response contains harmful keywords. Use $bot_message (current event text); $last_bot_message is not set yet when output rails run."""
+  run $harmful = check_output_harmful_keywords(text=$bot_message)
+  if $harmful
+    bot blocked_output
+    stop
+
+define subflow allow output
+  """Output passed; respond with allow message."""
+  bot allow
+  stop

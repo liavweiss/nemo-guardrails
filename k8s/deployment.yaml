@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nemo-guardrails
+  namespace: nemo-guardrails
+  labels:
+    app: nemo-guardrails
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nemo-guardrails
+  template:
+    metadata:
+      labels:
+        app: nemo-guardrails
+    spec:
+      containers:
+        - name: nemo-guardrails
+          image: nemoguardrails:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /v1/rails/configs
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
