@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Understanding NVIDIA NeMo Guardrails</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.8;
+            color: #1a202c;
+            background: #0f172a;
+            overflow-x: hidden;
+        }
+
+        .animated-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, #667eea, #764ba2, #f093fb, #4facfe);
+            background-size: 400% 400%;
+            animation: gradientShift 15s ease infinite;
+            z-index: -1;
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 80px 20px;
+            color: white;
+            position: relative;
+        }
+
+        header h1 {
+            font-size: 3.5em;
+            margin-bottom: 20px;
+            text-shadow: 3px 3px 10px rgba(0, 0, 0, 0.3);
+            animation: fadeInDown 1s ease;
+        }
+
+        header .subtitle {
+            font-size: 1.5em;
+            opacity: 0.95;
+            animation: fadeInUp 1s ease;
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .content-card {
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 20px;
+            padding: 50px;
+            margin: 30px 0;
+            box-shadow: 0 30px 90px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        h2 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            position: relative;
+            display: inline-block;
+        }
+
+        h2:after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 0;
+            width: 60%;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 2px;
+        }
+
+        h3 {
+            color: #4c1d95;
+            font-size: 1.8em;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+
+        p {
+            margin-bottom: 20px;
+            font-size: 1.1em;
+            line-height: 1.9;
+        }
+
+        .hero-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 15px;
+            margin: 40px 0;
+            box-shadow: 0 20px 60px rgba(102, 126, 234, 0.4);
+            font-size: 1.2em;
+            line-height: 2;
+        }
+
+        .hero-box strong {
+            color: #fbbf24;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 30px;
+            margin: 50px 0;
+        }
+
+        .feature-card {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            padding: 35px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            transition: all 0.4s ease;
+            border: 3px solid transparent;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card:before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+        }
+
+        .feature-card:hover {
+            transform: translateY(-10px) scale(1.02);
+            box-shadow: 0 20px 50px rgba(102, 126, 234, 0.3);
+            border-color: #667eea;
+        }
+
+        .feature-card h4 {
+            font-size: 1.4em;
+            margin-bottom: 15px;
+            color: #1e3a8a;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .emoji {
+            font-size: 2em;
+            filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.2));
+        }
+
+        .problem-solver {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin: 40px 0;
+        }
+
+        .problem-card {
+            background: white;
+            border-left: 6px solid;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .problem-card:nth-child(1) { border-color: #ef4444; }
+        .problem-card:nth-child(2) { border-color: #f59e0b; }
+        .problem-card:nth-child(3) { border-color: #10b981; }
+        .problem-card:nth-child(4) { border-color: #3b82f6; }
+        .problem-card:nth-child(5) { border-color: #8b5cf6; }
+        .problem-card:nth-child(6) { border-color: #ec4899; }
+
+        .problem-card:hover {
+            transform: translateX(10px);
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
+        }
+
+        .problem-card .icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+            display: block;
+        }
+
+        .problem-card h4 {
+            font-size: 1.3em;
+            margin-bottom: 10px;
+            color: #1e293b;
+        }
+
+        .problem-card p {
+            font-size: 1em;
+            color: #64748b;
+            margin: 0;
+        }
+
+        .rail-container {
+            margin: 60px 0;
+        }
+
+        .rail-type {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            margin: 30px 0;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            border: 3px solid;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .rail-type:nth-child(1) { border-color: #ef4444; }
+        .rail-type:nth-child(2) { border-color: #f59e0b; }
+        .rail-type:nth-child(3) { border-color: #10b981; }
+        .rail-type:nth-child(4) { border-color: #3b82f6; }
+        .rail-type:nth-child(5) { border-color: #8b5cf6; }
+
+        .rail-type:hover {
+            transform: scale(1.02);
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.15);
+        }
+
+        .rail-type .badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 25px;
+            font-size: 0.95em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .rail-type h3 {
+            margin-top: 10px;
+            font-size: 2em;
+        }
+
+        .rail-type h4 {
+            color: #4b5563;
+            margin-top: 25px;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+
+        .rail-type ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .rail-type ul li {
+            padding: 12px 0;
+            padding-left: 35px;
+            position: relative;
+            font-size: 1.05em;
+        }
+
+        .rail-type ul li:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #667eea;
+            font-weight: bold;
+            font-size: 1.4em;
+        }
+
+        .architecture-visual {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: white;
+            border-radius: 20px;
+            padding: 50px;
+            margin: 50px 0;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .architecture-visual h3 {
+            color: white;
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2em;
+        }
+
+        .flow-step {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 25px;
+            border-radius: 12px;
+            margin: 20px 0;
+            border-left: 5px solid #667eea;
+            font-size: 1.15em;
+            transition: all 0.3s ease;
+        }
+
+        .flow-step:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateX(10px);
+        }
+
+        .flow-arrow {
+            text-align: center;
+            font-size: 2.5em;
+            color: #667eea;
+            margin: 15px 0;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        code {
+            background: #1e293b;
+            color: #f1f5f9;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+        }
+
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 30px;
+            border-radius: 12px;
+            overflow-x: auto;
+            margin: 30px 0;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            border: 1px solid #334155;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .warning-box {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-left: 6px solid #f59e0b;
+            padding: 25px;
+            margin: 35px 0;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(245, 158, 11, 0.2);
+        }
+
+        .warning-box strong {
+            color: #92400e;
+            font-size: 1.15em;
+        }
+
+        .info-box {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border-left: 6px solid #3b82f6;
+            padding: 25px;
+            margin: 35px 0;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.2);
+        }
+
+        .info-box strong {
+            color: #1e40af;
+            font-size: 1.15em;
+        }
+
+        .success-box {
+            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+            border-left: 6px solid #10b981;
+            padding: 25px;
+            margin: 35px 0;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(16, 185, 129, 0.2);
+        }
+
+        .success-box strong {
+            color: #065f46;
+            font-size: 1.15em;
+        }
+
+        .link-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 15px 35px;
+            border-radius: 30px;
+            text-decoration: none;
+            margin: 15px 15px 15px 0;
+            transition: all 0.3s ease;
+            font-weight: bold;
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        .link-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
+        }
+
+        footer {
+            background: rgba(255, 255, 255, 0.98);
+            color: #1e293b;
+            padding: 50px;
+            text-align: center;
+            margin-top: 60px;
+            border-radius: 20px;
+            box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        footer a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .toc-box {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border: 2px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 28px 35px;
+            margin-bottom: 45px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.06);
+        }
+
+        .toc-box h2 {
+            margin-bottom: 20px;
+            font-size: 1.6em;
+        }
+
+        .toc-box ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .toc-box li {
+            margin: 10px 0;
+            padding-left: 0;
+        }
+
+        .toc-box a {
+            color: #4338ca;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 1.05em;
+        }
+
+        .toc-box a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 768px) {
+            .content-card {
+                padding: 30px;
+            }
+
+            header h1 {
+                font-size: 2.2em;
+            }
+
+            h2 {
+                font-size: 2em;
+            }
+
+            .feature-grid,
+            .problem-solver {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="animated-bg"></div>
+    
+    <div class="container">
+        <header>
+            <h1>🛡️ NVIDIA NeMo Guardrails</h1>
+            <p class="subtitle">Understanding AI Safety Through Intelligent Checkpoints</p>
+        </header>
+
+        <div class="content-card">
+            <!-- Table of Contents -->
+            <nav class="toc-box" aria-label="Table of contents">
+                <h2>📑 Table of Contents</h2>
+                <ul>
+                    <li><a href="#introduction">What is NeMo Guardrails?</a></li>
+                    <li><a href="#problems">What Problems Does It Solve?</a></li>
+                    <li><a href="#architecture">How It Works</a></li>
+                    <li><a href="#rail-types">The 5 Types of Guardrails (Rails)</a></li>
+                    <li><a href="#requirements">Requirements &amp; Installation</a></li>
+                    <li><a href="#configuration">How to Configure Guardrails</a></li>
+                    <li><a href="#nemo-kubernetes">Using NeMo in a Kubernetes System</a></li>
+                    <li><a href="#guards-with-without-inference">Guardrails With Inference vs Without Inference</a></li>
+                </ul>
+            </nav>
+
+            <!-- Introduction -->
+            <section id="introduction">
+                <h2>What is NeMo Guardrails?</h2>
+                
+                <div class="hero-box">
+                    The <strong>NVIDIA NeMo Guardrails library</strong> is an open-source Python package for adding programmable guardrails to LLM-based applications. Guardrails make your LLM-based application safer and more secure by blocking inappropriate, off-topic, or malicious user inputs and LLM responses.
+                </div>
+
+                <p style="font-size: 1.2em; margin-top: 30px;">NVIDIA NeMo is a suite of microservices, tools, and libraries for building, deploying, and scaling LLM-based applications. NeMo Guardrails provides tools to build guardrails and integrate them at both <strong>development time</strong> (Python library) and <strong>production time</strong> (API server, Docker, or NeMo microservice). For full integration options, see the <a href="https://docs.nvidia.com/nemo/guardrails/latest/getting-started/integrate-into-application.html" target="_blank" rel="noopener">official Integrate Guardrails into Your Application</a> guide.</p>
+            </section>
+
+            <!-- What Problems Does It Solve -->
+            <section id="problems">
+                <h2>What Problems Does It Solve?</h2>
+                
+                <div class="problem-solver">
+                    <div class="problem-card">
+                        <span class="icon">🚫</span>
+                        <h4>Jailbreak Protection</h4>
+                        <p>Blocks malicious prompts trying to manipulate your AI into ignoring safety rules</p>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <span class="icon">🎯</span>
+                        <h4>Topic Control</h4>
+                        <p>Prevents AI from discussing forbidden or inappropriate topics</p>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <span class="icon">☣️</span>
+                        <h4>Content Safety</h4>
+                        <p>Filters out toxic, harmful, or inappropriate content in both inputs and outputs</p>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <span class="icon">🔐</span>
+                        <h4>PII Detection</h4>
+                        <p>Detects and masks Personally Identifiable Information to protect user privacy</p>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <span class="icon">✅</span>
+                        <h4>Response Validation</h4>
+                        <p>Validates AI responses for accuracy, safety, and compliance</p>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <span class="icon">🔧</span>
+                        <h4>Tool Access Control</h4>
+                        <p>Controls what external tools and APIs the AI can access and execute</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Architecture -->
+            <section id="architecture">
+                <h2>How It Works</h2>
+
+                <p style="font-size: 1.15em;">NeMo Guardrails uses an <strong>event-driven architecture</strong> that processes your LLM interactions through multiple checkpoints, ensuring safety at every stage.</p>
+
+                <div class="architecture-visual">
+                    <h3>Complete Request Flow</h3>
+                    
+                    <div class="flow-step">
+                        <strong>1. User Input</strong> - Raw message from the user
+                    </div>
+                    <div class="flow-arrow">↓</div>
+                    
+                    <div class="flow-step">
+                        <strong>2. Input Rails</strong> - Safety checks on user message (jailbreak, harmful content, PII)
+                    </div>
+                    <div class="flow-arrow">↓</div>
+                    
+                    <div class="flow-step">
+                        <strong>3. Retrieval Rails</strong> - Filter documents if using RAG (optional)
+                    </div>
+                    <div class="flow-arrow">↓</div>
+                    
+                    <div class="flow-step">
+                        <strong>4. Dialog Rails</strong> - Control conversation flow (optional)
+                    </div>
+                    <div class="flow-arrow">↓</div>
+                    
+                    <div class="flow-step">
+                        <strong>5. LLM Processing</strong> - Your main AI model generates response
+                    </div>
+                    <div class="flow-arrow">↓</div>
+                    
+                    <div class="flow-step">
+                        <strong>6. Execution Rails</strong> - Validate tool calls if AI wants to use external APIs (optional)
+                    </div>
+                    <div class="flow-arrow">↓</div>
+                    
+                    <div class="flow-step">
+                        <strong>7. Output Rails</strong> - Final safety checks on AI response
+                    </div>
+                    <div class="flow-arrow">↓</div>
+                    
+                    <div class="flow-step">
+                        <strong>8. Final Response</strong> - Safe, validated response to user
+                    </div>
+                </div>
+
+                <div class="info-box">
+                    <strong>💡 Defense in Depth:</strong> Multiple checkpoints mean that even if something passes one stage, it can still be caught at another. This layered approach provides comprehensive protection.
+                </div>
+            </section>
+
+            <!-- Rail Types -->
+            <section id="rail-types">
+                <h2>The 5 Types of Guardrails (Rails)</h2>
+
+                <p style="font-size: 1.15em; margin-bottom: 40px;">NeMo Guardrails provides five types of "rails" (checkpoints) that operate at different stages of the LLM interaction pipeline. Each rail type serves a specific security purpose:</p>
+
+                <div class="rail-container">
+                    <div class="rail-type">
+                        <div class="badge">Stage 1: BEFORE LLM</div>
+                        <h3>🛡️ Input Rails</h3>
+                        
+                        <h4>What it does:</h4>
+                        <p>Validates and sanitizes user inputs BEFORE they reach your LLM</p>
+                        
+                        <h4>Use Cases:</h4>
+                        <ul>
+                            <li>Block harmful, toxic, or inappropriate inputs</li>
+                            <li>Catch jailbreak attempts ("Ignore previous instructions...")</li>
+                            <li>Ensure users stay on allowed topics</li>
+                            <li>Detect and mask sensitive data (SSN, credit cards)</li>
+                        </ul>
+
+                        <h4>Example:</h4>
+                        <pre><code>User: "How to hack into a system?"
+   ↓
+Input Rail: BLOCKED! (Harmful content)
+   ↓
+Response: "I cannot help with that request."</code></pre>
+                    </div>
+
+                    <div class="rail-type">
+                        <div class="badge">Stage 2: RAG PIPELINE</div>
+                        <h3>📚 Retrieval Rails</h3>
+                        
+                        <h4>What it does:</h4>
+                        <p>Filters and validates retrieved knowledge during RAG (Retrieval-Augmented Generation)</p>
+                        
+                        <h4>Use Cases:</h4>
+                        <ul>
+                            <li>Only use trusted and approved document sources</li>
+                            <li>Ensure retrieved text chunks are relevant and safe</li>
+                            <li>Filter out off-topic or outdated documents</li>
+                            <li>Prevent sensitive data from retrieved docs reaching the LLM</li>
+                        </ul>
+
+                        <h4>Example:</h4>
+                        <pre><code>User: "What's our company policy on X?"
+   ↓
+Retrieve documents from knowledge base
+   ↓
+Retrieval Rail: Filter outdated policies
+   ↓
+LLM receives only current, validated docs</code></pre>
+                    </div>
+
+                    <div class="rail-type">
+                        <div class="badge">Stage 3: CONVERSATION</div>
+                        <h3>🗣️ Dialog Rails</h3>
+                        
+                        <h4>What it does:</h4>
+                        <p>Controls conversation flow and enforces policies across multiple messages</p>
+                        
+                        <h4>Use Cases:</h4>
+                        <ul>
+                            <li>Guide conversations along predefined paths</li>
+                            <li>Keep users on track with business logic</li>
+                            <li>Monitor ongoing conversation for sensitive data leaks</li>
+                            <li>Enforce conversation state and boundaries</li>
+                        </ul>
+
+                        <h4>Example:</h4>
+                        <pre><code>Turn 1: User asks about product A
+Turn 2: User asks about pricing
+Turn 3: User asks about competitor
+   ↓
+Dialog Rail: "Let's focus on our products"</code></pre>
+                    </div>
+
+                    <div class="rail-type">
+                        <div class="badge">Stage 4: TOOL CALLS</div>
+                        <h3>🔧 Execution Rails</h3>
+                        
+                        <h4>What it does:</h4>
+                        <p>Validates and controls external actions the LLM wants to perform</p>
+                        
+                        <h4>Use Cases:</h4>
+                        <ul>
+                            <li>Check parameters before calling external tools</li>
+                            <li>Verify results from external systems</li>
+                            <li>Restrict which APIs the LLM can call</li>
+                            <li>Prevent dangerous tool usage (delete, modify sensitive data)</li>
+                        </ul>
+
+                        <h4>Example:</h4>
+                        <pre><code>LLM wants: delete_file("important_data.sql")
+   ↓
+Execution Rail: BLOCKED! (Dangerous action)
+   ↓
+Response: "Cannot perform destructive operations"</code></pre>
+                    </div>
+
+                    <div class="rail-type">
+                        <div class="badge">Stage 5: AFTER LLM</div>
+                        <h3>✅ Output Rails</h3>
+                        
+                        <h4>What it does:</h4>
+                        <p>Evaluates and post-processes model responses BEFORE showing them to users</p>
+                        
+                        <h4>Use Cases:</h4>
+                        <ul>
+                            <li>Block unsafe or off-policy AI responses</li>
+                            <li>Strip out accidentally generated PII or secrets</li>
+                            <li>Verify accuracy against trusted sources</li>
+                            <li>Ensure appropriate tone and language</li>
+                        </ul>
+
+                        <h4>Example:</h4>
+                        <pre><code>LLM generates: "Your SSN is 123-45-6789..."
+   ↓
+Output Rail: BLOCKED! (PII detected)
+   ↓
+Response: "I cannot share personal information."</code></pre>
+                    </div>
+                </div>
+
+                <div class="info-box">
+                    <strong>💡 Most Common:</strong> Input and Output Rails are the most frequently used because they form the first and last lines of defense. However, you can combine multiple rail types for comprehensive protection.
+                </div>
+            </section>
+
+            <!-- Requirements & Installation -->
+            <section id="requirements">
+                <h2>Requirements & Installation</h2>
+
+                <h3>System Requirements</h3>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h4><span class="emoji">🐍</span> Python Version</h4>
+                        <p>Python 3.10, 3.11, 3.12, or 3.13</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4><span class="emoji">💾</span> Memory</h4>
+                        <p>Minimum 4GB RAM (CPU only, no GPU required)</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4><span class="emoji">🔨</span> Compiler</h4>
+                        <p>C++ compiler (for Annoy library installation)</p>
+                    </div>
+                </div>
+
+                <div class="info-box" style="margin-top: 40px;">
+                    <strong>✅ NO NVIDIA Hardware Required!</strong><br>
+                    NeMo Guardrails works with ANY LLM provider - OpenAI, Azure OpenAI, Anthropic (Claude), Google Vertex AI, Cohere, AWS Bedrock, vLLM, HuggingFace, or any self-hosted model. NVIDIA models are completely optional.
+                </div>
+
+                <h3>Installation</h3>
+
+                <h4>Basic Installation:</h4>
+                <pre><code># Install core library
+pip install nemoguardrails
+
+# Or with specific provider support
+pip install "nemoguardrails[openai]"      # OpenAI
+pip install "nemoguardrails[nvidia]"      # NVIDIA models (optional)
+pip install "nemoguardrails[all]"         # All integrations</code></pre>
+
+                <h4>Optional Features:</h4>
+                <pre><code>pip install "nemoguardrails[sdd]"         # Sensitive data detection
+pip install "nemoguardrails[eval]"        # Evaluation tools
+pip install "nemoguardrails[tracing]"     # OpenTelemetry tracing
+pip install "nemoguardrails[jailbreak]"   # Jailbreak detection</code></pre>
+            </section>
+
+            <!-- Configuration -->
+            <section id="configuration">
+                <h2>How to Configure Guardrails</h2>
+                <p style="margin-bottom: 20px;">For the full schema (models, rails, prompts, all options) and a <strong>complete config example</strong>, see the <a href="https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/configuration-reference.html" target="_blank" rel="noopener">Configuration YAML Schema Reference</a>.</p>
+                <p style="font-size: 1.15em;">NeMo offers <strong>three configuration approaches</strong>:</p>
+
+                <div class="feature-grid" style="margin: 40px 0;">
+                    <div class="feature-card" style="border: 3px solid #10b981;">
+                        <h4><span class="emoji">✅</span> Approach 1: Built-In Self-Check</h4>
+                        <p><strong>Recommended for most users</strong></p>
+                        <p>Uses LLM to check inputs/outputs against natural language policies</p>
+                        <p><strong>Files needed:</strong> config.yml + prompts.yml</p>
+                        <p><strong>No code required!</strong></p>
+                    </div>
+                    <div class="feature-card">
+                        <h4><span class="emoji">⚙️</span> Approach 2: Custom Colang Flows</h4>
+                        <p><strong>For advanced control</strong></p>
+                        <p>Define custom logic and conversation flows (we use Colang 1.0)</p>
+                        <p><strong>Files needed:</strong> config.yml + config.co (+ optional actions.py)</p>
+                        <p><strong>When:</strong> Guard-only, keyword/pattern checks, custom business logic</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4><span class="emoji">🔄</span> Approach 3: Hybrid</h4>
+                        <p><strong>Best of both worlds</strong></p>
+                        <p>Combine built-in checks with custom flows</p>
+                        <p><strong>Files needed:</strong> config.yml + prompts.yml + config.co (or rails.co)</p>
+                        <p><strong>When:</strong> Need both flexibility and simplicity</p>
+                    </div>
+                </div>
+
+                <h3>Approach 1: Built-In Self-Check (Recommended) 🌟</h3>
+                
+                <div class="success-box" style="margin: 20px 0;">
+                    <strong>✅ Use This When:</strong>
+                    <ul style="list-style-position: inside; margin-top: 10px;">
+                        <li>You want content safety (block harmful, explicit, abusive content)</li>
+                        <li>You want LLM-powered, context-aware checking</li>
+                        <li>You don't need custom conversation flows</li>
+                        <li>You want to get started quickly (5 minutes)</li>
+                        <li><strong>This is what we implemented successfully!</strong></li>
+                    </ul>
+                </div>
+
+                <h4>Step 1: config/config.yml</h4>
+                <pre><code># Minimal configuration - activate built-in self-check rails
+models:
+  - type: main
+    engine: google_genai
+    model: gemini-2.5-flash
+    parameters:
+      google_api_key: ${GOOGLE_API_KEY}
+
+# Activate the built-in self-check flows
+rails:
+  input:
+    flows:
+      - self check input    # LLM checks user input
+  
+  output:
+    flows:
+      - self check output   # LLM checks bot output</code></pre>
+
+                <h4>Step 2: config/prompts.yml (The Policies)</h4>
+                <p style="margin: 15px 0;">This file tells the LLM <strong>what to check for</strong>. It uses natural language policies:</p>
+                
+                <pre><code>prompts:
+  # Define what user inputs are NOT allowed
+  - task: self_check_input
+    content: |-
+      Your task is to check if the user message complies with policy.
+
+      Company policy for user messages:
+      - should not contain harmful data
+      - should not ask to impersonate someone
+      - should not contain explicit content
+      - should not use abusive language
+      - should not share sensitive information
+      - should not contain code execution requests
+      
+      User message: "{{ user_input }}"
+      
+      Question: Should the user message be blocked (Yes or No)?
+      Answer:
+
+  # Define what bot outputs are NOT allowed
+  - task: self_check_output
+    content: |-
+      Your task is to check if the bot message complies with policy.
+
+      Company policy for bot:
+      - messages should not contain explicit content
+      - messages should not contain abusive language
+      - messages should not contain harmful content
+      - if a message is a refusal, should be polite
+
+      Bot message: "{{ bot_response }}"
+
+      Question: Should the message be blocked (Yes or No)?
+      Answer:</code></pre>
+
+                <div class="info-box" style="margin: 25px 0;">
+                    <strong>💡 How It Works:</strong>
+                    <ol style="list-style-position: inside; margin-top: 10px; line-height: 2;">
+                        <li>User sends: "How to make a bomb?"</li>
+                        <li>NeMo calls LLM with self_check_input prompt → LLM says "Yes" (block it)</li>
+                        <li>NeMo returns: "I'm sorry, I can't respond to that." ✅ Blocked!</li>
+                    </ol>
+                    <p style="margin-top: 15px;"><strong>Makes 3 LLM calls per request:</strong> input check → main task → output check</p>
+                </div>
+
+                <div class="warning-box" style="margin: 25px 0;">
+                    <strong>⚠️ Important:</strong> This approach uses the <strong>LLM itself</strong> as the judge. It's powerful and context-aware but:
+                    <ul style="margin-top: 10px; list-style-position: inside;">
+                        <li>Uses more API calls (3x)</li>
+                        <li>Slightly slower (extra ~300-500ms)</li>
+                        <li>Better accuracy than keyword matching</li>
+                    </ul>
+                </div>
+
+                <h4>✅ That's It! No Colang, No Python Code Needed</h4>
+                <p>Just two YAML files and you have working, production-ready guardrails.</p>
+
+                <hr style="margin: 50px 0; border: 2px solid #e5e7eb;">
+
+                <h3>Approach 2: Custom Colang Flows ⚙️</h3>
+
+                <div class="info-box" style="margin: 20px 0;">
+                    <strong>🤔 What is Colang?</strong>
+                    <p style="margin-top: 10px;">Colang (Conversational Language) is NeMo's <strong>Domain-Specific Language (DSL)</strong> for defining conversation flows and custom guardrail logic.</p>
+                </div>
+
+                <div class="warning-box" style="margin: 25px 0;">
+                    <strong>Why we use Colang 1.0 instead of Colang 2.x</strong>
+                    <p style="margin-top: 10px;">We use <strong>Colang 1.0</strong> for guard-only (no LLM) configurations. Colang 2.x is newer and still in <strong>beta</strong>; NVIDIA’s FAQ states it is not recommended for production and may cause instability. In practice, with Colang 2.x and the HTTP server in guard-only mode (<code>dialog: false</code>, no main LLM), the API often returns <strong>empty assistant content</strong> even when input rails run and emit block/allow messages—the response pipeline does not collect bot utterances correctly in that setup. Colang 1.0 is better tested for guard-only over <code>/v1/chat/completions</code> and returns the expected block/allow messages. The examples below use Colang 1.0.</p>
+                </div>
+
+                <div class="success-box" style="margin: 20px 0;">
+                    <strong>✅ Use Colang When:</strong>
+                    <ul style="list-style-position: inside; margin-top: 10px;">
+                        <li>You need <strong>custom conversation flows</strong> (multi-turn dialog management)</li>
+                        <li>You need <strong>keyword-based checks</strong> (faster than LLM checks)</li>
+                        <li>You need <strong>conditional logic</strong> ("if user asks about X, then do Y")</li>
+                        <li>You need to <strong>call custom Python functions</strong></li>
+                        <li>You want <strong>deterministic behavior</strong> (not LLM-based)</li>
+                    </ul>
+                </div>
+
+                <h4>Example: Guard-only with Colang 1.0 (input rails, no LLM)</h4>
+                <p style="margin-bottom: 15px;">This example matches our project: <strong>Colang 1.0</strong>, no <code>models</code> section, and input rails that call Python actions. The <code>rails.input.flows</code> list runs in order; the last flow sends the allow response when nothing was blocked.</p>
+
+                <h5>Step 1: config/config.yml</h5>
+                <pre><code># Guards only, no LLM — Colang 1.x
+colang_version: "1.0"
+
+# No "models" section. Input rails run in order.
+rails:
+  input:
+    flows:
+      - check input rail
+      - allow input</code></pre>
+
+                <h5>Step 2: config/config.co (Colang 1.0 flows)</h5>
+                <pre><code># Colang 1.x — input rails only (guard-only, no LLM).
+
+define bot blocked_harmful
+  "I cannot help with that request as it may be harmful or illegal."
+
+define bot blocked_sensitive
+  "Please do not share passwords, API keys, or other sensitive data in chat."
+
+define bot allow
+  "Request allowed."
+
+define subflow check input rail
+  run $harmful = check_harmful_keywords(text=$user_message)
+  if $harmful
+    bot blocked_harmful
+    stop
+  run $sensitive = check_sensitive_patterns(text=$user_message)
+  if $sensitive
+    bot blocked_sensitive
+    stop
+
+define subflow allow input
+  bot allow
+  stop</code></pre>
+
+                <div class="feature-grid" style="margin: 30px 0;">
+                    <div class="feature-card">
+                        <h4>✅ Colang Pros</h4>
+                        <ul style="list-style-position: inside;">
+                            <li>⚡ Faster (no extra LLM calls)</li>
+                            <li>💰 Cheaper (no check costs)</li>
+                            <li>🎯 Deterministic (predictable)</li>
+                            <li>🔧 Fine-grained control</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <h4>❌ Colang Cons</h4>
+                        <ul style="list-style-position: inside;">
+                            <li>🔤 Keyword-based (easy to bypass)</li>
+                            <li>🛠️ Requires maintenance</li>
+                            <li>📚 Learning curve (new DSL)</li>
+                            <li>🤖 Less context-aware</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h4>Python actions (used by the example above)</h4>
+                <p>Colang 1.0 calls Python with <code>run $var = action_name(param=$value)</code>. The actions used by <code>check input rail</code> are:</p>
+
+                <h5>config/actions.py</h5>
+                <pre><code>from nemoguardrails.actions import action
+
+@action()
+def check_harmful_keywords(text: str) -> bool:
+    """Return True if the message should be blocked (harmful). No LLM."""
+    # e.g. block phrases like "bomb", "hack", "kill"
+    ...
+
+@action()
+def check_sensitive_patterns(text: str) -> bool:
+    """Return True if the message looks like sharing secrets/PII. No LLM."""
+    # e.g. "my password is ...", SSN, API keys
+    ...</code></pre>
+
+                <div class="warning-box" style="margin: 25px 0;">
+                    <strong>⚠️ Complexity Warning:</strong> Colang is powerful but adds complexity. Start with built-in self-check (Approach 1) unless you specifically need:
+                    <ul style="margin-top: 10px; list-style-position: inside;">
+                        <li>Custom dialog management</li>
+                        <li>Integration with external systems</li>
+                        <li>Complex conditional logic</li>
+                    </ul>
+                </div>
+
+                <hr style="margin: 50px 0; border: 2px solid #e5e7eb;">
+
+                <h3>Approach 3: Hybrid (Built-In + Custom) 🔄</h3>
+
+                <div class="success-box" style="margin: 20px 0;">
+                    <strong>✅ Use Hybrid When:</strong>
+                    <ul style="list-style-position: inside; margin-top: 10px;">
+                        <li>You want <strong>LLM-powered content safety</strong> (broad coverage)</li>
+                        <li>Plus <strong>fast keyword checks</strong> for specific known threats</li>
+                        <li>Plus <strong>custom business logic</strong></li>
+                        <li><strong>Example:</strong> Block known attack patterns instantly (keywords), then LLM checks unknown patterns</li>
+                    </ul>
+                </div>
+
+                <h4>Example: Layered Defense</h4>
+
+                <h5>config/config.yml</h5>
+                <pre><code>models:
+  - type: main
+    engine: google_genai
+    model: gemini-2.5-flash
+    parameters:
+      google_api_key: ${GOOGLE_API_KEY}
+
+rails:
+  input:
+    flows:
+      - check harmful keywords      # Fast keyword check (Colang)
+      - self check input           # Deep LLM check (prompts.yml)
+  
+  output:
+    flows:
+      - self check output          # LLM output validation</code></pre>
+
+                <h5>config/config.co (Colang 1.0 — quick keyword filter)</h5>
+                <pre><code>define bot refuse harmful
+  "I cannot help with harmful requests."
+
+define subflow check harmful keywords
+  run $harmful = check_harmful_keywords(text=$user_message)
+  if $harmful
+    bot refuse harmful
+    stop</code></pre>
+
+                <h5>config/prompts.yml (Deep LLM Check)</h5>
+                <pre><code>prompts:
+  - task: self_check_input
+    content: |-
+      Check if the user message complies with safety policy.
+      [... policies ...]
+      
+  - task: self_check_output
+    content: |-
+      Check if the bot message complies with safety policy.
+      [... policies ...]</code></pre>
+
+                <div class="architecture-visual" style="margin: 30px 0;">
+                    <h3>Hybrid Flow Diagram</h3>
+                    <div style="background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%); padding: 25px; border-radius: 15px; font-family: 'Courier New', monospace; line-height: 2;">
+                        User Input: "How to make a b0mb?" (bypasses keywords)
+                        <br>↓
+                        <br><strong>Layer 1:</strong> check harmful keywords → ❌ No match (b0mb != bomb)
+                        <br>↓
+                        <br><strong>Layer 2:</strong> self check input (LLM) → ✅ BLOCKED (understands intent)
+                        <br>↓
+                        <br>Return: "I'm sorry, I can't respond to that."
+                    </div>
+                </div>
+
+                <h4>Benefits of Hybrid</h4>
+                <ul style="list-style-position: inside; line-height: 2; margin: 20px 0;">
+                    <li>⚡ <strong>Fast</strong>: Known threats blocked instantly by keywords</li>
+                    <li>🛡️ <strong>Comprehensive</strong>: LLM catches novel/obfuscated threats</li>
+                    <li>🎯 <strong>Flexible</strong>: Custom logic for business rules</li>
+                    <li>💰 <strong>Cost-effective</strong>: Keywords reduce LLM calls for common cases</li>
+                </ul>
+
+                </section>
+
+            <!-- Using NeMo in Kubernetes -->
+            <section id="nemo-kubernetes">
+                <h2>Using NeMo in a Kubernetes System</h2>
+                <p style="margin-bottom: 20px;">For our project we use NeMo Guardrails as a <strong>service in Kubernetes</strong>: run the Guardrails API Server in a pod and call it via REST. This matches the official approach of deploying guardrails as a separate component that other services call.</p>
+                <p style="margin-bottom: 15px;"><strong>How it works:</strong> You run <code>nemoguardrails server --config /path/to/config</code> inside a container. The server exposes <code>POST /v1/chat/completions</code> (and <code>GET /v1/rails/configs</code>). Your app or another pod (e.g. an inference gateway) sends HTTP requests to the NeMo service; NeMo runs the configured rails and returns the response. No GPU required; the server runs on CPU.</p>
+                <p style="margin-bottom: 15px;"><strong>Deploying in Kubernetes:</strong></p>
+                <ul style="margin: 0 0 20px 25px; line-height: 2;">
+                    <li><strong>Image:</strong> Build a Docker image that installs <code>nemoguardrails</code>, copies your config directory (e.g. <code>config/</code> with <code>config.yml</code>, optional <code>rails.co</code>, <code>prompts.yml</code>, <code>actions.py</code>), and runs <code>nemoguardrails server --config /config --port 8000 --host 0.0.0.0</code>. See <a href="https://docs.nvidia.com/nemo/guardrails/latest/deployment/using-docker.html" target="_blank" rel="noopener">Deploy with Docker</a>.</li>
+                    <li><strong>Pod/Deployment:</strong> Run the image as a Deployment; mount a ConfigMap or embed config in the image. Expose port 8000.</li>
+                    <li><strong>Service:</strong> Create a ClusterIP (or NodePort/LoadBalancer) Service so other pods can call <code>http://nemo-guardrails:8000</code>.</li>
+                </ul>
+                <p style="margin-bottom: 15px;"><strong>Calling from another service:</strong> Send <code>POST /v1/chat/completions</code> with JSON body: <code>config_id</code>, <code>messages</code>, and optionally <code>options</code> (e.g. <code>options.rails.dialog = false</code> for guard-only). Response includes <code>messages</code> (assistant reply or refusal). See <a href="https://docs.nvidia.com/nemo/guardrails/latest/reference/api-server-endpoints/index.html" target="_blank" rel="noopener">API Server Endpoints</a> and <a href="https://docs.nvidia.com/nemo/guardrails/latest/run-rails/using-fastapi-server/run-guardrails-server.html" target="_blank" rel="noopener">Run the NeMo Guardrails Server</a>.</p>
+            </section>
+
+            <!-- Guardrails with vs without inference -->
+            <section id="guards-with-without-inference">
+                <h2>Guardrails With Inference vs Without Inference</h2>
+                <p style="font-size: 1.15em; margin-bottom: 30px;">NeMo can be used in two main ways. Both use the same <code>POST /v1/chat/completions</code> endpoint; the difference is config and request options. Aligned with <a href="https://docs.nvidia.com/nemo/guardrails/latest/reference/api-server-endpoints/index.html" target="_blank" rel="noopener">API Server Endpoints</a> and <a href="https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/configuration-reference.html" target="_blank" rel="noopener">Configuration YAML Schema Reference</a>.</p>
+
+                <div class="inference-options-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 28px; margin: 35px 0;">
+                    <div class="inference-option-card" style="background: linear-gradient(180deg, #eef2ff 0%, #e0e7ff 100%); border: 3px solid #6366f1; border-radius: 16px; padding: 28px; box-shadow: 0 10px 40px rgba(99, 102, 241, 0.15);">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 18px;">
+                            <span style="font-size: 2em;" aria-hidden="true">🟣</span>
+                            <h3 style="margin: 0; color: #4338ca; font-size: 1.45em;">With Inference</h3>
+                        </div>
+                        <p style="margin-bottom: 16px; font-size: 1.02em;">Full pipeline: <strong>input rails → LLM generates reply → output rails</strong>. NeMo returns the assistant message. Default when you don’t set <code>options.rails.dialog = false</code>.</p>
+                        <p style="margin-bottom: 10px; font-size: 0.95em; font-weight: 700; color: #374151;">How to use</p>
+                        <ul style="margin: 0 0 16px 20px; line-height: 1.85; font-size: 0.98em;">
+                            <li><strong>Config:</strong> <code>models</code> with <code>type: main</code> and your LLM; <code>rails.input.flows</code> / <code>rails.output.flows</code> as needed.</li>
+                            <li><strong>Request:</strong> <code>POST /v1/chat/completions</code> with <code>config_id</code>, <code>messages</code>; omit <code>options.rails.dialog</code> or leave dialog enabled.</li>
+                        </ul>
+                        <p style="margin-bottom: 8px; font-size: 0.95em; font-weight: 700; color: #059669;">✓ Pros</p>
+                        <ul style="margin: 0 0 12px 20px; line-height: 1.8; font-size: 0.98em;">
+                            <li>One service for guarding and generation</li>
+                            <li>Consistent policy before and after the LLM</li>
+                        </ul>
+                        <p style="margin-bottom: 8px; font-size: 0.95em; font-weight: 700; color: #b91c1c;">✗ Cons</p>
+                        <ul style="margin: 0; line-height: 1.8; font-size: 0.98em; padding-left: 20px;">
+                            <li>Requires LLM and API key; latency and cost</li>
+                        </ul>
+                    </div>
+                    <div class="inference-option-card" style="background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%); border: 3px solid #10b981; border-radius: 16px; padding: 28px; box-shadow: 0 10px 40px rgba(16, 185, 129, 0.15);">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 18px;">
+                            <span style="font-size: 2em;" aria-hidden="true">🟢</span>
+                            <h3 style="margin: 0; color: #047857; font-size: 1.45em;">Without Inference</h3>
+                        </div>
+                        <p style="margin-bottom: 16px; font-size: 1.02em;">Only rails run: <strong>dialog step skipped</strong>, no LLM reply. You get block/allow and an optional refusal message. Use when inference is elsewhere and NeMo is purely a guard.</p>
+                        <p style="margin-bottom: 10px; font-size: 0.95em; font-weight: 700; color: #374151;">How to use</p>
+                        <ul style="margin: 0 0 16px 20px; line-height: 1.85; font-size: 0.98em;">
+                            <li><strong>Request:</strong> <code>POST /v1/chat/completions</code> with <code>options.rails.dialog = false</code>, <code>input: true</code> (and optionally <code>output: true</code> to validate a candidate reply).</li>
+                            <li><strong>Config:</strong> No <code>models</code> needed if rails are Colang-only or use non-LLM Python actions; no API key.</li>
+                        </ul>
+                        <p style="margin-bottom: 8px; font-size: 0.95em; font-weight: 700; color: #059669;">✓ Pros</p>
+                        <ul style="margin: 0 0 12px 20px; line-height: 1.8; font-size: 0.98em;">
+                            <li>No inference in NeMo; can run with no model/API key</li>
+                            <li>Fast; good for guard-only in front of your own LLM</li>
+                        </ul>
+                        <p style="margin-bottom: 8px; font-size: 0.95em; font-weight: 700; color: #b91c1c;">✗ Cons</p>
+                        <ul style="margin: 0; line-height: 1.8; font-size: 0.98em; padding-left: 20px;">
+                            <li>Non-LLM rails (e.g. keywords) easier to bypass</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h4>Example: Non-Inference Usage (Guards Only)</h4>
+                <p style="margin-bottom: 15px;">Below is the pattern we use: <strong>Colang 1.0</strong>, no <code>models</code>, input rails only, and Python actions (harmful keywords + sensitive-data patterns). No LLM and no API key.</p>
+
+                <p style="margin-bottom: 8px;"><strong>1. config.yml</strong></p>
+                <p style="margin-bottom: 10px;">Set <code>colang_version: "1.0"</code> and list input flow names. Flows run in order; the last one (<code>allow input</code>) sends the allow response when nothing was blocked.</p>
+                <pre><code>colang_version: "1.0"
+
+# No "models" section.
+rails:
+  input:
+    flows:
+      - check input rail
+      - allow input</code></pre>
+
+                <p style="margin: 20px 0 8px;"><strong>2. config.co</strong> (Colang 1.0) — bot messages and two input subflows:</p>
+                <pre><code>define bot blocked_harmful
+  "I cannot help with that request as it may be harmful or illegal."
+
+define bot blocked_sensitive
+  "Please do not share passwords, API keys, or other sensitive data in chat."
+
+define bot allow
+  "Request allowed."
+
+define subflow check input rail
+  run $harmful = check_harmful_keywords(text=$user_message)
+  if $harmful
+    bot blocked_harmful
+    stop
+  run $sensitive = check_sensitive_patterns(text=$user_message)
+  if $sensitive
+    bot blocked_sensitive
+    stop
+
+define subflow allow input
+  bot allow
+  stop</code></pre>
+
+                <p style="margin: 20px 0 8px;"><strong>3. actions.py</strong> — two checks (no LLM):</p>
+                <pre><code>from nemoguardrails.actions import action
+
+@action()
+def check_harmful_keywords(text: str) -> bool:
+    """Return True if the message should be blocked (harmful). No LLM."""
+    ...
+
+@action()
+def check_sensitive_patterns(text: str) -> bool:
+    """Return True if the message looks like sharing secrets/PII. No LLM."""
+    ...</code></pre>
+
+                <p style="margin: 20px 0 8px;"><strong>4. Request</strong> — set <code>options.rails.dialog = false</code> so no reply is generated:</p>
+                <pre><code>POST /v1/chat/completions
+Content-Type: application/json
+
+{
+  "config_id": "default",
+  "messages": [{"role": "user", "content": "How to make a bomb?"}],
+  "options": {
+    "rails": {
+      "input": true,
+      "output": false,
+      "dialog": false
+    }
+  }
+}</code></pre>
+
+                <p style="margin: 20px 0 8px;"><strong>5. Response behavior</strong></p>
+                <ul style="margin: 0 0 20px 25px; line-height: 2;">
+                    <li><strong>Blocked:</strong> <code>check input rail</code> runs; if harmful or sensitive, it does <code>bot blocked_harmful</code> or <code>bot blocked_sensitive</code> and <code>stop</code>. The API returns that message as the assistant content (e.g. <em>"I cannot help with that request…"</em> or <em>"Please do not share passwords…"</em>).</li>
+                    <li><strong>Allowed:</strong> Neither check blocks, so the next flow <code>allow input</code> runs and does <code>bot allow</code>. The API returns <em>"Request allowed."</em> as the assistant content. Your client can then proceed (e.g. call your own LLM).</li>
+                </ul>
+
+                <h4>Summary: With Inference vs Without Inference</h4>
+                <p style="margin-bottom: 12px;"><strong>With inference:</strong> NeMo runs input rails, then generates the assistant reply using the configured main model, then runs output rails. You get a full chat completion from a single call. Use this when you want one service to both guard and generate, and are fine with providing an LLM and API key.</p>
+                <p style="margin-bottom: 12px;"><strong>Without inference:</strong> NeMo runs only the rails you enable (input and/or output); the dialog step is skipped, so no reply is generated. You get a block/allow outcome and an optional refusal message. Use this when inference runs elsewhere (e.g. your own LLM or gateway) and you want NeMo purely as a guard—optionally with no model and no API key if your rails are Colang-only or use non-LLM Python actions.</p>
+
+                <h4>What You Can Do Without Inference</h4>
+                <ul style="margin: 10px 0 20px 25px; line-height: 2;">
+                    <li><strong>Input validation:</strong> Run input rails only (<code>options.rails.input = true</code>, <code>dialog = false</code>). Block or allow the user message; no LLM reply.</li>
+                    <li><strong>Output validation:</strong> Validate a candidate reply from your own LLM: send the user message and the candidate assistant message in <code>messages</code>, set <code>options.rails.output = true</code> and <code>dialog = false</code>. NeMo runs output rails on that candidate (e.g. self-check or Colang flow) and returns block/allow.</li>
+                    <li><strong>Colang flows:</strong> Use Colang 1.0 flows in <code>config.co</code> (e.g. <code>define subflow</code>, <code>run $var = action(...)</code>, <code>bot</code>, <code>stop</code>).</li>
+                    <li><strong>Python actions:</strong> Call <code>@action()</code> functions from Colang (e.g. keyword lists, regex, external APIs). No model needed if the action does not call an LLM.</li>
+                    <li><strong>No API key:</strong> When no rail uses an LLM, omit <code>models</code> in config and run with no API key.</li>
+                    <li><strong>Refusal message:</strong> When a rail blocks, it can set the assistant message (e.g. <code>bot say "..."</code> in Colang); that message is returned in the API response so the client can show it to the user.</li>
+                </ul>
+            </section>
+        </div>
+
+        <footer>
+            <h3 style="margin-bottom: 20px; font-size: 1.8em;">📚 References</h3>
+            <p style="font-size: 1.05em; margin-bottom: 15px;"><strong>NVIDIA NeMo Guardrails docs:</strong></p>
+            <ul style="list-style: none; padding-left: 0; line-height: 2;">
+                <li><a href="https://docs.nvidia.com/nemo/guardrails/latest/getting-started/integrate-into-application.html" target="_blank" rel="noopener">Integrate Guardrails into Your Application</a></li>
+                <li><a href="https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/configuration-reference.html" target="_blank" rel="noopener">Configuration YAML Schema Reference</a></li>
+                <li><a href="https://docs.nvidia.com/nemo/guardrails/latest/run-rails/using-fastapi-server/run-guardrails-server.html" target="_blank" rel="noopener">Run the NeMo Guardrails Server</a></li>
+                <li><a href="https://docs.nvidia.com/nemo/guardrails/latest/deployment/using-docker.html" target="_blank" rel="noopener">Deploy with Docker</a></li>
+                <li><a href="https://docs.nvidia.com/nemo/guardrails/latest/deployment/using-microservice.html" target="_blank" rel="noopener">NeMo Guardrails Microservice</a></li>
+            </ul>
+            <p style="font-size: 1.05em; margin-top: 25px; margin-bottom: 10px;"><strong>Other:</strong> <a href="https://github.com/NVIDIA-NeMo/Guardrails" target="_blank" rel="noopener">GitHub</a> · <a href="https://aistudio.google.com/" target="_blank" rel="noopener">Gemini API Key</a></p>
+            <p style="margin-top: 30px; opacity: 0.7; font-size: 0.95em;">Understanding NeMo Guardrails • February 2026</p>
+        </footer>
+    </div>
+</body>
+</html>
