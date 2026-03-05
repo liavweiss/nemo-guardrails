@@ -1,0 +1,30 @@
+# Example: Presidio PII only.
+# Overrides NeMo's built-in "bot inform answer unknown" with a clear PII-specific message.
+
+define bot allow
+  "Request allowed."
+
+define bot blocked_output
+  "Response blocked: the answer contained personal or sensitive information."
+
+define bot refuse to respond
+  "Please do not share personal or sensitive information (e.g. names, emails, phone numbers, SSN, credit cards) in your message."
+
+# Override NeMo's built-in sensitive data subflows to use our custom messages.
+# NeMo's default calls "bot inform answer unknown" ("I don't know the answer to that.").
+
+define subflow detect sensitive data on input
+  $has_sensitive_data = execute detect_sensitive_data(source="input", text=$user_message)
+  if $has_sensitive_data
+    bot refuse to respond
+    stop
+
+define subflow detect sensitive data on output
+  $has_sensitive_data = execute detect_sensitive_data(source="output", text=$bot_message)
+  if $has_sensitive_data
+    bot blocked_output
+    stop
+
+define subflow allow output
+  bot allow
+  stop

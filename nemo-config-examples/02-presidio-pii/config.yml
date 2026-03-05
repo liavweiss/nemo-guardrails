@@ -1,0 +1,29 @@
+# Example: Presidio PII detection only (no keyword/pattern blocking).
+# Requires: nemoguardrails[sdd] + python -m spacy download en_core_web_lg
+colang_version: "1.0"
+
+rails:
+  config:
+    sensitive_data_detection:
+      input:
+        entities:
+          - PERSON
+          - EMAIL_ADDRESS
+          - PHONE_NUMBER
+          - CREDIT_CARD
+          - US_SSN
+        score_threshold: 0.5
+      output:
+        entities:
+          - PERSON
+          - EMAIL_ADDRESS
+          - PHONE_NUMBER
+          - CREDIT_CARD
+        score_threshold: 0.5
+  input:
+    flows:
+      - detect sensitive data on input
+  output:
+    flows:
+      - detect sensitive data on output
+      - allow output
