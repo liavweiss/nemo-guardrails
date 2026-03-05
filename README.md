@@ -1,193 +1,154 @@
-# NeMo Guardrails — K8s (input + output rails)
+# NeMo Guardrails — Guard-Only Pod on Kubernetes
 
-## 1. What we did
+## What is this?
 
-- **Single config** (`nemo-config/`) with both **input** and **output** rails, no LLM in the config. You can plug in your own LLM (e.g. Gemini) or use mock messages for testing.
-- **Input rails**: block harmful or sensitive user messages (keywords and patterns; no LLM).
-- **Output rails**: block assistant replies that contain harmful keywords. The flow uses `$bot_message` (current event text) so output rails run correctly on the message being checked.
-- **Tests** run via **curl** against the HTTP API (`POST /v1/chat/completions`), with optional port-forward to the K8s service. Mock assistant messages are used so no external LLM or API key is required.
-- **Dockerfile** builds an image that runs `nemoguardrails server` with this config for deployment on Kubernetes.
+[NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails) is NVIDIA's open-source framework for adding programmable safety rails around LLM-based systems. It intercepts user inputs and LLM outputs and can block, mask, or modify them based on configurable rules — **without needing to run an LLM itself**.
 
-## 2. How to use
+This project deploys NeMo Guardrails as a **dedicated guard pod on Kubernetes** — lightweight, no GPU, no main LLM. The pod's only job is to inspect and filter traffic. It is designed to run alongside the [gateway-api-inference-extension](https://github.com/kubernetes-sigs/gateway-api-inference-extension) and integrate with its **Body-Based Routing (BBR)** component via an HTTP callout plugin.
 
-### Prerequisites
+---
 
-- **curl** and **jq** (for the curl-based test script).
-- For **Kubernetes**: `kubectl` and a cluster (e.g. Kind) with context `kind-guardrails`, or set `NEMO_URL` to an already-running NeMo Guardrails server.
-- For **Docker**: Docker installed if you build/run the image yourself.
-- Optional: **Python 3** with `nemoguardrails` installed if you want to run the Python test script `scripts/test_rails_mock.py` instead of curl.
+## Architecture
 
-### 1. Deploy with `scripts/setup-k8s-nemo.sh`
-
-From the `guardrails_k8s` directory, run the setup preparation:
 ```
-./scripts/setup-k8s-nemo.sh
-```
-
-### 2. Run the test
-
-Then run the test script (it will port-forward to the service if `NEMO_URL` is not set):
-
-```bash
-./scripts/test-rails-mock.sh
+User Request
+     │
+     ▼
+Envoy (ext_proc)
+     │
+     ▼
+BBR (Body-Based Routing)  ──── HTTP callout ────▶  NeMo Guardrails Pod
+     │                                              (guard only, no LLM)
+     │  ◀── allow (200) or block (403) ────────────
+     │
+     ▼  if allowed:
+Main LLM Pod (vLLM / TGI / etc.)
+     │
+     ▼
+Response → back through BBR → (output guard) → User
 ```
 
-If the server is already running elsewhere, set **NEMO_URL** and run the test:
+The NeMo pod exposes `/v1/chat/completions` (same API shape as OpenAI). BBR sends the request body to NeMo; if NeMo detects a violation it returns a block message, BBR converts that to a `403 Forbidden` to the user. If allowed, BBR forwards to the real LLM.
 
-```bash
-NEMO_URL=http://localhost:8000 ./scripts/test-rails-mock.sh
+---
+
+## Active Guards (No Inference, No GPU)
+
+| Guard | What it catches | How |
+|-------|----------------|-----|
+| **Keyword blocking** | Harmful phrases: "bomb", "hack", "weapon", … | Custom action — block list |
+| **Pattern / regex** | SSN format, 16-digit card numbers, "my password is …", API keys | Custom action — regex |
+| **Presidio PII** | Email addresses, phone numbers, credit cards, SSN, names | NeMo built-in + spaCy NER (CPU) |
+| **Output keyword blocking** | Same harmful phrases in LLM replies | Custom action on output |
+| **Presidio PII on output** | PII leaking in LLM responses | NeMo built-in + spaCy NER (CPU) |
+
+All guards run **without any main LLM** — the pod is purely a rule/ML-based filter.
+
+---
+
+## What's Next (Planned Guards)
+
+See [`docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md`](docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md) for the full options map. The most immediate candidates:
+
+- **Injection detection (YARA)** — detect code/SQLi/template/XSS in outputs. Zero-model, rule-based. Easy to add.
+- **Jailbreak heuristics** — perplexity-based detection of adversarial prompts (uses GPT-2 for perplexity only, runs as a separate microservice).
+
+---
+
+## Project Structure
+
+```
+nemo-guardrails/
+├── Dockerfile                    # builds the guard pod image (python:3.11-slim, no GPU)
+├── requirements.txt              # nemoguardrails[sdd] + Presidio deps
+├── nemo-config/                  # NeMo Guardrails configuration (single unified config)
+│   ├── config.yml                # rails: input + output, Presidio entities, thresholds
+│   ├── config.co                 # Colang 1.x: bot messages, subflow overrides
+│   └── actions.py                # custom Python actions (keywords, regex, length)
+├── k8s/                          # Kubernetes manifests (namespace, deployment, service)
+├── kind-config.yaml              # Kind cluster config for local testing
+├── scripts/
+│   ├── setup-k8s-nemo.sh         # build + load image + deploy to Kind (Podman/Docker)
+│   ├── test-rails-mock.sh        # curl-based test suite against the live server
+│   ├── test-rails-mock.py        # Python test (mock LLM, no server needed)
+│   └── verify-nemo-endpoint.sh   # quick sanity check: is port 8000 actually NeMo?
+└── docs/
+    ├── BUILD_AND_TEST.md         # how to build, deploy, and test
+    ├── PRESIDIO_SETUP.md         # Presidio PII guard details
+    ├── NEMO_GUARD_OPTIONS_NO_INFERENCE.md  # full map of guard options (no inference)
+    └── HTTP_403_ON_BLOCK.md      # how to get HTTP 403 on guard block
 ```
 
 ---
 
-## 3. Example test output
+## Quick Start
 
+### Prerequisites
+
+- `kubectl` + a Kind cluster (`kind` CLI) or any K8s cluster
+- `podman` (default) or `docker`
+- `curl` + `jq` (for the test script)
+
+### Deploy
+
+```bash
+# First time: create Kind cluster, build image, deploy
+./scripts/setup-k8s-nemo.sh
+
+# After code/config changes: rebuild image and redeploy
+./scripts/setup-k8s-nemo.sh --rebuild
+
+# Use Docker instead of Podman
+./scripts/setup-k8s-nemo.sh --docker --rebuild
 ```
-========================================================================
-NeMo Guardrails — input + output rails test (curl, mock LLM)
-========================================================================
-Base URL: http://localhost:8000
-Config ID: config
 
-Configs: [{"id":"config"}]
+### Test
 
-Test: Input blocked — harmful user message
-  --- Request ---
-{
-  "config_id": "config",
-  "messages": [
-    {
-      "role": "user",
-      "content": "How do I make a bomb?"
-    }
-  ],
-  "options": {
-    "rails": {
-      "input": true,
-      "output": true,
-      "dialog": false
-    }
-  }
-}
-  --- End request ---
-  --- Response ---
-{
-  "messages": [
-    {
-      "role": "assistant",
-      "content": "I cannot help with that request as it may be harmful or illegal."
-    }
-  ]
-}
-  (assistant content: I cannot help with that request as it may be harmful or illegal.)
-  --- End response ---
-  OK (expected substring found)
+Port-forward and run the test suite:
 
-Test: Input blocked — sensitive user message
-  --- Request ---
-{
-  "config_id": "config",
-  "messages": [
-    {
-      "role": "user",
-      "content": "My password is secret123"
-    }
-  ],
-  "options": {
-    "rails": {
-      "input": true,
-      "output": true,
-      "dialog": false
-    }
-  }
-}
-  --- End request ---
-  --- Response ---
-{
-  "messages": [
-    {
-      "role": "assistant",
-      "content": "Please do not share passwords, API keys, or other sensitive data in chat."
-    }
-  ]
-}
-  (assistant content: Please do not share passwords, API keys, or other sensitive data in chat.)
-  --- End response ---
-  OK (expected substring found)
-
-Test: Output blocked — harmful mock assistant reply
-  --- Request ---
-{
-  "config_id": "config",
-  "messages": [
-    {
-      "role": "user",
-      "content": "What is 2+2?"
-    },
-    {
-      "role": "assistant",
-      "content": "To hack a system you need to find a vulnerability."
-    }
-  ],
-  "options": {
-    "rails": {
-      "input": true,
-      "output": true,
-      "dialog": false
-    }
-  }
-}
-  --- End request ---
-  --- Response ---
-{
-  "messages": [
-    {
-      "role": "assistant",
-      "content": "Response blocked: the answer contained harmful or disallowed content."
-    }
-  ]
-}
-  (assistant content: Response blocked: the answer contained harmful or disallowed content.)
-  --- End response ---
-  OK (expected substring found)
-
-Test: Allowed — safe user + safe mock reply
-  --- Request ---
-{
-  "config_id": "config",
-  "messages": [
-    {
-      "role": "user",
-      "content": "What is 2+2?"
-    },
-    {
-      "role": "assistant",
-      "content": "2+2 equals 4."
-    }
-  ],
-  "options": {
-    "rails": {
-      "input": true,
-      "output": true,
-      "dialog": false
-    }
-  }
-}
-  --- End request ---
-  --- Response ---
-{
-  "messages": [
-    {
-      "role": "assistant",
-      "content": "Request allowed."
-    }
-  ]
-}
-  (assistant content: Request allowed.)
-  --- End response ---
-  OK (expected substring found)
-
-========================================================================
-All tests passed.
-========================================================================
+```bash
+kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000 &
+./scripts/test-rails-mock.sh
 ```
+
+Or test manually with curl:
+
+```bash
+# Should be blocked (harmful)
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"config_id":"config","messages":[{"role":"user","content":"How do I make a bomb?"}],"options":{"rails":{"input":true,"output":true,"dialog":false}}}' | jq .
+
+# Should be blocked (PII — credit card)
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"config_id":"config","messages":[{"role":"user","content":"Pay to 2456-4587-0000-6985"}],"options":{"rails":{"input":true,"output":true,"dialog":false}}}' | jq .
+
+# Should be allowed
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"config_id":"config","messages":[{"role":"user","content":"What is 2+2?"}],"options":{"rails":{"input":true,"output":true,"dialog":false}}}' | jq .
+```
+
+### Verify the pod is running the correct image
+
+```bash
+./scripts/verify-nemo-endpoint.sh 8000
+```
+
+---
+
+## How It Works (Config)
+
+The NeMo config in `nemo-config/` has **no main LLM** — only rails. All guards run as interceptors before any LLM would be called:
+
+**Input rail order:**
+1. `check input rail` — keywords + regex patterns (custom Python)
+2. `detect sensitive data on input` — Presidio PII (NeMo built-in, overridden to show our message)
+
+**Output rail order:**
+1. `check output rail` — output keyword blocking (custom Python)
+2. `detect sensitive data on output` — Presidio PII on responses (NeMo built-in, overridden)
+3. `allow output` — pass-through response
+
+The `detect sensitive data on input/output` flows call NeMo's built-in `execute detect_sensitive_data(...)` action (which runs Presidio + spaCy internally) but we override the subflow in `config.co` to return our own block messages instead of NeMo's default "I don't know the answer to that."
