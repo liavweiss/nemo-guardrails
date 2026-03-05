@@ -20,15 +20,18 @@ So: **Presidio = protect user data (PII)**. **Jailbreak = protect the model from
 
 ---
 
-## What the POC Already Has (No Inference)
+## What is Implemented (No Inference)
 
-From your current setup (`nemo-config/`, `guardrails_k8s`):
+From `nemo-config/` (current state):
 
-- **Keyword blocking** – Block list of phrases (e.g. harmful terms) on input and output.
-- **Pattern / regex** – SSN-like patterns, card numbers, “my password is …”, API key patterns.
-- **Message length** – Reject overly long input.
+| Guard | Status | Notes |
+|-------|--------|-------|
+| **Keyword blocking** | ✅ Done | Block list of harmful phrases on input + output |
+| **Pattern / regex** | ✅ Done | SSN, card numbers, "my password is …", API keys |
+| **Message length** | ✅ Done | Reject overly long input |
+| **Presidio PII** | ✅ Done | EMAIL, PHONE, CREDIT_CARD, SSN, PERSON on input + output |
 
-All of this is **custom actions in Python**: no LLM, no GPU, minimal footprint. This is the baseline.
+All of the above: no LLM, no GPU, minimal footprint.
 
 ---
 
@@ -104,24 +107,36 @@ So: for a **guard-only, no-inference** design, **do not** use self-check flows o
 
 ## Recommended Next Steps (Aligned with NVIDIA Docs)
 
-1. **Stay rule-based first (no extra deps in guard pod)**  
-   - Extend your existing custom actions: more keywords, more regexes, more patterns (e.g. PII-like, secrets).  
-   - Still no inference, minimal footprint.
+1. ✅ **Custom actions (keywords, regex, length)** — Done.
 
-2. **Add Presidio PII (still no LLM)**  
-   - Follow [Presidio Integration](https://docs.nvidia.com/nemo/guardrails/latest/user-guides/community/presidio.html).  
-   - In `config.yml`: `rails.config.sensitive_data_detection` for input/output; add flows `detect sensitive data on input/output` or `mask sensitive data on input/output`.  
-   - Install `nemoguardrails[sdd]` and spaCy model; runs on CPU.
+2. ✅ **Presidio PII** — Done. Detects/blocks EMAIL, PHONE, CREDIT_CARD, SSN, PERSON on input and output.
 
-3. **Optionally add jailbreak heuristics**  
-   - Add flow `jailbreak detection heuristics` and configure `jailbreak_detection` (e.g. `server_endpoint` or in-process).  
-   - Uses a small model (e.g. GPT-2) only for perplexity — guard pod still does not run your main LLM.
+3. **🟡 Injection detection (YARA) — Easy next win, no inference, no model**
+   - Detects code injection, SQLi, template injection (Jinja), XSS in **output** (good for agentic/RAG use cases).
+   - Zero models: pure YARA rule-based. Install `pip install yara-python` (included in `nemoguardrails[jailbreak]`).
+   - Just add to `config.yml`:
+     ```yaml
+     rails:
+       config:
+         injection_detection:
+           injections: [code, sqli, template, xss]
+           action: reject   # or omit
+       output:
+         flows:
+           - injection detection
+     ```
+   - Official doc: [Injection Detection](https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/guardrail-catalog.html#injection-detection)
 
-4. **If you want “smarter” guards without main inference**  
-   - Consider **Llama Guard** (or similar) as a **separate** small model: run it in the guard pod or in a separate microservice, and point NeMo at it.  
-   - NeMo docs: add a `llama_guard` (or content_safety) model in `config.yml` and use `llama guard check input` / `llama guard check output` flows.  
-   - Keeps “no inference” in the sense of “no main application LLM”; the guard pod only runs the guard model.
+4. **Jailbreak heuristics (perplexity) — Small model, guard pod stays no-inference**
+   - Add flow `jailbreak detection heuristics` and configure `jailbreak_detection`.
+   - Uses GPT-2 (`gpt2-large`) only for perplexity computation — not a chat LLM.
+   - Recommended: run as a **separate jailbreak server** (`server_endpoint`) for production (~2s per request on CPU).
+   - Official doc: [Jailbreak Detection](https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/guardrail-catalog.html#jailbreak-detection)
 
+5. **Smarter content safety (Llama Guard / Nemotron) — Separate small guard model**
+   - Add `llama guard check input` / `content safety check input` flows with a dedicated safety model.
+   - Keeps "no inference" in the sense of "no main application LLM"; only the guard model runs.
+   - Official doc: [Llama Guard](https://docs.nvidia.com/nemo/guardrails/latest/user-guides/community/llama-guard.html), [Content Safety](https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/guardrail-catalog.html#content-safety)
 ---
 
 ## Summary Table (Quick Reference)
