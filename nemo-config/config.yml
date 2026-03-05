@@ -1,11 +1,32 @@
 # Single config: input + output rails, no LLM (use mock or external LLM).
+# Includes: keyword/pattern checks (custom actions) + Presidio PII detection.
 colang_version: "1.0"
 
 rails:
+  config:
+    # Presidio (PII): pick entities to detect. Full list: guardrails_k8s/PRESIDIO_SETUP.md
+    sensitive_data_detection:
+      input:
+        entities:
+          - PERSON
+          - EMAIL_ADDRESS
+          - PHONE_NUMBER
+          - CREDIT_CARD
+          - US_SSN
+        score_threshold: 0.5  # reduce false positives (default 0.2)
+      output:
+        entities:
+          - PERSON
+          - EMAIL_ADDRESS
+          - PHONE_NUMBER
+          - CREDIT_CARD
+        score_threshold: 0.5
   input:
     flows:
-      - check input rail
+      - check input rail              # keywords + patterns (custom actions)
+      - detect sensitive data on input  # Presidio PII — uses our "bot refuse to respond" message
   output:
     flows:
-      - check output rail
+      - check output rail               # harmful keywords (custom actions)
+      - detect sensitive data on output # Presidio PII on response
       - allow output

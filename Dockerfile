@@ -11,9 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install deps (no GPU)
+# Install deps (no GPU). [sdd] = Presidio PII (presidio-analyzer, presidio-anonymizer, spacy)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# Presidio needs spaCy English model for NER (PII detection)
+RUN python -m spacy download en_core_web_lg
 
 # NeMo config: input + output rails, no LLM (use mock or external LLM)
 COPY nemo-config /config

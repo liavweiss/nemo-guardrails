@@ -1,13 +1,6 @@
 # Colang 1.x — input + output rails (no LLM in config; use mock or external).
-# Flow: user input → check input rail → bot $bot_message. Output rails run automatically on the bot message.
-
-define user input
-  "..."
-
-define flow
-  user input
-  check input rail
-  bot $bot_message
+# All rails run as interceptors via config.yml (rails.input.flows / rails.output.flows).
+# No main flow needed: rails intercept before any LLM call.
 
 define bot blocked_harmful
   "I cannot help with that request as it may be harmful or illegal."
@@ -21,8 +14,11 @@ define bot allow
 define bot blocked_output
   "Response blocked: the answer contained harmful or disallowed content."
 
+define bot refuse to respond
+  "Please do not share personal or sensitive information (e.g. names, emails, phone numbers, SSN, credit cards) in your message."
+
 define subflow check input rail
-  """Block on harmful or sensitive user input."""
+  """Block on harmful or sensitive user input (keywords and patterns). PII is handled by NeMo's built-in Presidio flow."""
   run $harmful = check_harmful_keywords(text=$user_message)
   if $harmful
     bot blocked_harmful
@@ -33,7 +29,7 @@ define subflow check input rail
     stop
 
 define subflow check output rail
-  """Block if the bot response contains harmful keywords. Use $bot_message (current event text); $last_bot_message is not set yet when output rails run."""
+  """Block if the bot response contains harmful keywords. PII on output is handled by NeMo's built-in Presidio flow."""
   run $harmful = check_output_harmful_keywords(text=$bot_message)
   if $harmful
     bot blocked_output
@@ -43,3 +39,19 @@ define subflow allow output
   """Output passed; respond with allow message."""
   bot allow
   stop
+
+# Override NeMo's built-in sensitive data subflows to use our custom messages.
+# NeMo's defaults call "bot inform answer unknown" ("I don't know the answer to that.").
+# We redirect to our own bot messages while keeping the built-in detect_sensitive_data action (Presidio).
+
+define subflow detect sensitive data on input
+  $has_sensitive_data = execute detect_sensitive_data(source="input", text=$user_message)
+  if $has_sensitive_data
+    bot refuse to respond
+    stop
+
+define subflow detect sensitive data on output
+  $has_sensitive_data = execute detect_sensitive_data(source="output", text=$bot_message)
+  if $has_sensitive_data
+    bot blocked_output
+    stop
