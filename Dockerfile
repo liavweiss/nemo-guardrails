@@ -17,8 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Presidio needs spaCy English model for NER (PII detection)
 RUN python -m spacy download en_core_web_lg
 
-# NeMo config: input + output rails, no LLM (use mock or external LLM)
-COPY nemo-config /config
+# NeMo config directory (override with: docker build --build-arg CONFIG_DIR=nemo-config-examples/02-presidio-pii)
+ARG CONFIG_DIR=nemo-config
+COPY ${CONFIG_DIR} /config
 
 EXPOSE 8000
 

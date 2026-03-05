@@ -18,6 +18,7 @@ REBUILD=""
 RESTART_ONLY=""
 LOAD_ONLY=""
 DOCKER_NO_CACHE=""
+CONFIG_DIR="nemo-config"   # relative to REPO_ROOT; override with --config-dir
 
 usage() {
   cat <<'EOF'
@@ -28,17 +29,20 @@ Creates the cluster if it does not exist, builds the image, loads it into Kind,
 and applies the deployment and service.
 
 Options:
-  --help          Show this help and exit.
-  --docker        Use Docker for build/load (default: podman).
-  --rebuild       Force: rebuild image, load into Kind, and restart the
-                  deployment (rollout restart). Use after config or code changes.
-  --no-cache      Pass --no-cache to build (full rebuild; use if Presidio/
-                  spacy is missing in the running image).
-  --restart-only  Only restart the deployment (rollout restart). No build or load.
-  --load-only     Load current nemoguardrails:latest into Kind and restart deployment
-                  (no build). Use after a manual build with your chosen runtime.
-  --skip-build    Skip build and load (only create cluster if needed and
-                  apply/update K8s manifests). Useful when image is already loaded.
+  --help                    Show this help and exit.
+  --docker                  Use Docker for build/load (default: podman).
+  --config-dir <dir>        NeMo config directory to bake into the image
+                            (relative to repo root, default: nemo-config).
+                            e.g. --config-dir nemo-config-examples/01-keywords-patterns
+  --rebuild                 Force: rebuild image, load into Kind, and restart the
+                            deployment (rollout restart). Use after config or code changes.
+  --no-cache                Pass --no-cache to build (full rebuild; use if Presidio/
+                            spacy is missing in the running image).
+  --restart-only            Only restart the deployment (rollout restart). No build or load.
+  --load-only               Load current nemoguardrails:latest into Kind and restart deployment
+                            (no build). Use after a manual build with your chosen runtime.
+  --skip-build              Skip build and load (only create cluster if needed and
+                            apply/update K8s manifests). Useful when image is already loaded.
 
 Environment:
   CLUSTER_NAME       Kind cluster name (default: guardrails).
@@ -50,6 +54,7 @@ Examples:
   ./scripts/setup-k8s-nemo.sh --docker              # use Docker instead of Podman
   ./scripts/setup-k8s-nemo.sh --rebuild
   ./scripts/setup-k8s-nemo.sh --rebuild --no-cache   # full rebuild (e.g. fix missing Presidio)
+  ./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/01-keywords-patterns
   ./scripts/setup-k8s-nemo.sh --load-only           # after manual build: load + restart
   ./scripts/setup-k8s-nemo.sh --restart-only
   ./scripts/setup-k8s-nemo.sh --help
@@ -66,6 +71,10 @@ parse_args() {
       --docker)
         CONTAINER_RUNTIME=docker
         shift
+        ;;
+      --config-dir)
+        CONFIG_DIR="$2"
+        shift 2
         ;;
       --rebuild)
         REBUILD=1
@@ -102,6 +111,15 @@ if [[ "$CONTAINER_RUNTIME" != "podman" ]] && [[ "$CONTAINER_RUNTIME" != "docker"
   echo "Invalid CONTAINER_RUNTIME=$CONTAINER_RUNTIME (use podman or docker)" >&2
   exit 1
 fi
+
+if [[ ! -d "$REPO_ROOT/$CONFIG_DIR" ]]; then
+  echo "Config directory not found: $REPO_ROOT/$CONFIG_DIR" >&2
+  echo "Available configs:" >&2
+  ls "$REPO_ROOT/nemo-config-examples/" 2>/dev/null | sed 's/^/  nemo-config-examples\//' >&2
+  echo "  nemo-config  (production default)" >&2
+  exit 1
+fi
+echo "Config dir: $CONFIG_DIR"
 
 # Legacy: env SKIP_BUILD still skips build unless --rebuild is set
 if [[ -z "$REBUILD" ]] && [[ -n "${SKIP_BUILD:-}" ]]; then
@@ -178,8 +196,8 @@ echo ""
 DID_LOAD_IMAGE=""
 echo "[2/3] Build and load image (runtime: $CONTAINER_RUNTIME)..."
 if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
-  echo "      Building image from $REPO_ROOT"
-  BUILD_ARGS=(-t nemoguardrails:latest "$REPO_ROOT")
+  echo "      Building image from $REPO_ROOT (config: $CONFIG_DIR)"
+  BUILD_ARGS=(--build-arg "CONFIG_DIR=$CONFIG_DIR" -t nemoguardrails:latest "$REPO_ROOT")
   [[ -n "$DOCKER_NO_CACHE" ]] && BUILD_ARGS=(--no-cache "${BUILD_ARGS[@]}")
   if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
     docker build "${BUILD_ARGS[@]}"
