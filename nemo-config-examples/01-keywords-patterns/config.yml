@@ -1,0 +1,11 @@
+# Example: keywords + regex patterns only. No Presidio, no spacy, no extra deps.
+colang_version: "1.0"
+
+rails:
+  input:
+    flows:
+      - check input rail
+  output:
+    flows:
+      - check output rail
+      - allow output

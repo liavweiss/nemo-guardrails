@@ -1,0 +1,33 @@
+# Example: keyword + pattern blocking only (no Presidio).
+
+define bot blocked_harmful
+  "I cannot help with that request as it may be harmful or illegal."
+
+define bot blocked_sensitive
+  "Please do not share passwords, API keys, or other sensitive data in chat."
+
+define bot allow
+  "Request allowed."
+
+define bot blocked_output
+  "Response blocked: the answer contained harmful or disallowed content."
+
+define subflow check input rail
+  run $harmful = check_harmful_keywords(text=$user_message)
+  if $harmful
+    bot blocked_harmful
+    stop
+  run $sensitive = check_sensitive_patterns(text=$user_message)
+  if $sensitive
+    bot blocked_sensitive
+    stop
+
+define subflow check output rail
+  run $harmful = check_output_harmful_keywords(text=$bot_message)
+  if $harmful
+    bot blocked_output
+    stop
+
+define subflow allow output
+  bot allow
+  stop
