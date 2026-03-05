@@ -168,7 +168,7 @@ if kind get kubeconfig --name "$CLUSTER_NAME" &>/dev/null; then
   echo "      Cluster '$CLUSTER_NAME' already exists. Skipping create."
 else
   echo "      Creating cluster: $CLUSTER_NAME"
-  kind create cluster --config "$REPO_ROOT/kind-config.yaml" --name "$CLUSTER_NAME"
+  kind create cluster --config "$K8S_DIR/kind-config.yaml" --name "$CLUSTER_NAME"
   echo "      Done."
 fi
 echo ""
