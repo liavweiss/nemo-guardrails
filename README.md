@@ -38,20 +38,13 @@ The NeMo pod exposes `/v1/chat/completions` (same API shape as OpenAI). BBR send
 |-------|----------------|-----|
 | **Keyword blocking** | Harmful phrases: "bomb", "hack", "weapon", … | Custom action — block list |
 | **Pattern / regex** | SSN format, 16-digit card numbers, "my password is …", API keys | Custom action — regex |
+| **Jailbreak heuristics** | DAN prompts, GCG adversarial suffix attacks | NeMo built-in — gpt2-large perplexity (CPU, baked into image) |
 | **Presidio PII** | Email addresses, phone numbers, credit cards, SSN, names | NeMo built-in + spaCy NER (CPU) |
 | **Output keyword blocking** | Same harmful phrases in LLM replies | Custom action on output |
 | **Presidio PII on output** | PII leaking in LLM responses | NeMo built-in + spaCy NER (CPU) |
 
-All guards run **without any main LLM** — the pod is purely a rule/ML-based filter.
-
----
-
-## What's Next (Planned Guards)
-
-See [`docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md`](docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md) for the full options map. The most immediate candidates:
-
-- **Injection detection (YARA)** — detect code/SQLi/template/XSS in outputs. Zero-model, rule-based. Easy to add.
-- **Jailbreak heuristics** — perplexity-based detection of adversarial prompts (uses GPT-2 for perplexity only, runs as a separate microservice).
+All guards run **without any main LLM** — the pod is purely a rule/ML-based filter.  
+See [`docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md`](docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md) for the full options map.
 
 ---
 
@@ -59,16 +52,19 @@ See [`docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md`](docs/NEMO_GUARD_OPTIONS_NO_INFER
 
 ```
 nemo-guardrails/
-├── Dockerfile                    # builds the guard pod image (python:3.11-slim, no GPU)
-├── requirements.txt              # nemoguardrails[sdd] + Presidio deps
-├── nemo-config/                  # NeMo Guardrails configuration (single unified config)
-│   ├── config.yml                # rails: input + output, Presidio entities, thresholds
+├── Dockerfile                    # guard pod image: python:3.11-slim, no GPU, gpt2-large baked in
+├── requirements.txt              # nemoguardrails[sdd] + transformers (gpt2-large)
+├── nemo-config/                  # production config — all guards combined
+│   ├── config.yml                # rails: keywords + jailbreak + Presidio; memory limit: 5 Gi
 │   ├── config.co                 # Colang 1.x: bot messages, subflow overrides
-│   └── actions.py                # custom Python actions (keywords, regex, length)
+│   └── actions.py                # custom Python actions (keywords, regex)
+├── nemo-config-examples/         # standalone examples — one guard per directory
+│   ├── 01-keywords-patterns/     # keyword + regex only (lightest, ~600 MB image)
+│   ├── 02-presidio-pii/          # Presidio PII only (~1.5 GB image)
+│   └── 03-jailbreak-heuristics/  # jailbreak heuristics only (~4 GB image, gpt2-large)
 ├── k8s/                          # Kubernetes manifests (namespace, deployment, service)
-├── kind-config.yaml              # Kind cluster config for local testing
 ├── scripts/
-│   ├── setup-k8s-nemo.sh         # build + load image + deploy to Kind (Podman/Docker)
+│   ├── setup-k8s-nemo.sh         # build + load + deploy to Kind; auto-detects example Dockerfiles
 │   ├── test-rails-mock.sh        # curl-based test suite against the live server
 │   ├── test-rails-mock.py        # Python test (mock LLM, no server needed)
 │   └── verify-nemo-endpoint.sh   # quick sanity check: is port 8000 actually NeMo?
@@ -92,7 +88,7 @@ nemo-guardrails/
 ### Deploy
 
 ```bash
-# First time: create Kind cluster, build image, deploy
+# First time: create Kind cluster, build image, deploy (all guards combined)
 ./scripts/setup-k8s-nemo.sh
 
 # After code/config changes: rebuild image and redeploy
@@ -101,6 +97,21 @@ nemo-guardrails/
 # Use Docker instead of Podman
 ./scripts/setup-k8s-nemo.sh --docker --rebuild
 ```
+
+**Deploy a standalone guard example** (each example has its own `Dockerfile` and `requirements.txt`):
+
+```bash
+# Keywords + regex only  — see nemo-config-examples/01-keywords-patterns/README.md
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/01-keywords-patterns
+
+# Presidio PII only      — see nemo-config-examples/02-presidio-pii/README.md
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/02-presidio-pii
+
+# Jailbreak heuristics only — see nemo-config-examples/03-jailbreak-heuristics/README.md
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/03-jailbreak-heuristics
+```
+
+The script auto-detects the `Dockerfile` inside the example directory and uses it as the build context.
 
 ### Test
 
@@ -144,7 +155,8 @@ The NeMo config in `nemo-config/` has **no main LLM** — only rails. All guards
 
 **Input rail order:**
 1. `check input rail` — keywords + regex patterns (custom Python)
-2. `detect sensitive data on input` — Presidio PII (NeMo built-in, overridden to show our message)
+2. `jailbreak detection heuristics` — gpt2-large perplexity; catches DAN prompts and GCG adversarial suffixes
+3. `detect sensitive data on input` — Presidio PII (NeMo built-in, overridden to show our message)
 
 **Output rail order:**
 1. `check output rail` — output keyword blocking (custom Python)
