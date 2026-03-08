@@ -25,7 +25,7 @@ pip install nemoguardrails[jailbreak]==0.20.0
 ## Deploy to K8s (standalone guard pod)
 
 ```bash
-./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/04-injection-detection
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/04-injection-detection
 kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000
 ```
 

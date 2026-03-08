@@ -13,7 +13,7 @@ A small wrapper server is provided that uses your NeMo config and returns **403*
 **Run it instead of `nemoguardrails server`:**
 
 ```bash
-# From the nemo-guardrails repo root (where nemo-config/ lives)
+# From the nemo-guardrails repo root (where guard-only-config/ lives)
 pip install nemoguardrails uvicorn fastapi
 python scripts/server_403.py
 ```

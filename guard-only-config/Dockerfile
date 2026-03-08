@@ -1,5 +1,5 @@
-# NeMo Guardrails server for K8s — guards only, no LLM, no API key.
-# Base image from Docker Hub; if you get "i/o timeout", check network or use a registry mirror.
+# guard-only-config: all guards combined — keywords, Presidio PII, jailbreak heuristics, YARA injection.
+# Guards only, no LLM, no API key. Single pod, CPU-only, ~5 Gi RAM (gpt2-large + spaCy).
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -32,9 +32,8 @@ GPT2LMHeadModel.from_pretrained('gpt2-large'); \
 GPT2TokenizerFast.from_pretrained('gpt2-large'); \
 print('gpt2-large cached.')"
 
-# NeMo config directory (override with: docker build --build-arg CONFIG_DIR=nemo-config-examples/02-presidio-pii)
-ARG CONFIG_DIR=nemo-config
-COPY ${CONFIG_DIR} /config
+# Copy this directory (config files alongside the Dockerfile) into the image.
+COPY . /config
 
 EXPOSE 8000
 

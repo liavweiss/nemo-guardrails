@@ -5,7 +5,7 @@
 set -e
 
 CLUSTER_NAME="${CLUSTER_NAME:-guardrails}"
-# When Dockerfile copies nemo-config to /config, single config_id is "config"
+# When Dockerfile copies guard-only-config to /config, single config_id is "config"
 CONFIG_ID="${NEMO_CONFIG_ID:-config}"
 # dialog: false so we can pass an assistant message (mock) and run output rails on it
 OPTIONS='{"rails":{"input":true,"output":true,"dialog":false}}'

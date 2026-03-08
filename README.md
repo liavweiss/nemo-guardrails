@@ -55,15 +55,20 @@ See [`docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md`](docs/NEMO_GUARD_OPTIONS_NO_INFER
 nemo-guardrails/
 ├── Dockerfile                    # guard pod image: python:3.11-slim, no GPU, gpt2-large baked in
 ├── requirements.txt              # nemoguardrails[sdd] + transformers (gpt2-large)
-├── nemo-config/                  # production config — all guards combined
-│   ├── config.yml                # rails: keywords + jailbreak + Presidio; memory limit: 5 Gi
+├── guard-only-config/                  # production: ALL guard-only guards combined (single pod, no inference)
+│   ├── config.yml                # rails: keywords + jailbreak + Presidio + YARA; memory: 5 Gi
 │   ├── config.co                 # Colang 1.x: bot messages, subflow overrides
 │   └── actions.py                # custom Python actions (keywords, regex)
-├── nemo-config-examples/         # standalone examples — one guard per directory
+│
+├── guard-only-examples/          # standalone examples — NO inference, NO external pod, single pod each
 │   ├── 01-keywords-patterns/     # keyword + regex only (lightest, ~600 MB image)
 │   ├── 02-presidio-pii/          # Presidio PII only (~1.5 GB image)
 │   ├── 03-jailbreak-heuristics/  # jailbreak heuristics only (~4 GB image, gpt2-large)
 │   └── 04-injection-detection/   # YARA code/SQLi/template/XSS detection (~600 MB image)
+│
+├── model-guard-examples/         # guards requiring a separate inference pod (NeMo pod + model pod)
+│   └── 05-llama-guard/           # semantic content safety via Llama Guard 3 1B (Ollama, CPU)
+│
 ├── k8s/                          # Kubernetes manifests (namespace, deployment, service)
 ├── scripts/
 │   ├── setup-k8s-nemo.sh         # build + load + deploy to Kind; auto-detects example Dockerfiles
@@ -73,7 +78,7 @@ nemo-guardrails/
 └── docs/
     ├── BUILD_AND_TEST.md         # how to build, deploy, and test
     ├── PRESIDIO_SETUP.md         # Presidio PII guard details
-    ├── NEMO_GUARD_OPTIONS_NO_INFERENCE.md  # full map of guard options (no inference)
+    ├── NEMO_GUARD_OPTIONS_NO_INFERENCE.md  # full map of guard options
     └── HTTP_403_ON_BLOCK.md      # how to get HTTP 403 on guard block
 ```
 
@@ -100,21 +105,28 @@ nemo-guardrails/
 ./scripts/setup-k8s-nemo.sh --docker --rebuild
 ```
 
-**Deploy a standalone guard example** (each example has its own `Dockerfile` and `requirements.txt`):
+**Deploy a guard-only standalone example** (single pod, no external dependencies):
 
 ```bash
-# Keywords + regex only  — see nemo-config-examples/01-keywords-patterns/README.md
-./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/01-keywords-patterns
+# Keywords + regex only  — see guard-only-examples/01-keywords-patterns/README.md
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/01-keywords-patterns
 
-# Presidio PII only      — see nemo-config-examples/02-presidio-pii/README.md
-./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/02-presidio-pii
+# Presidio PII only      — see guard-only-examples/02-presidio-pii/README.md
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/02-presidio-pii
 
-       # Jailbreak heuristics only — see nemo-config-examples/03-jailbreak-heuristics/README.md
-       ./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/03-jailbreak-heuristics
+# Jailbreak heuristics only — see guard-only-examples/03-jailbreak-heuristics/README.md
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/03-jailbreak-heuristics
 
-       # Injection detection (YARA) only — see nemo-config-examples/04-injection-detection/README.md
-       ./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/04-injection-detection
-       ```
+# Injection detection (YARA) only — see guard-only-examples/04-injection-detection/README.md
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/04-injection-detection
+```
+
+**Deploy a model-guard example** (NeMo pod + separate inference pod — see `model-guard-examples/`):
+
+```bash
+# Llama Guard semantic safety — see model-guard-examples/05-llama-guard/README.md
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir model-guard-examples/05-llama-guard
+```
 
 The script auto-detects the `Dockerfile` inside the example directory and uses it as the build context.
 
@@ -156,7 +168,7 @@ curl -s -X POST http://localhost:8000/v1/chat/completions \
 
 ## How It Works (Config)
 
-The NeMo config in `nemo-config/` has **no main LLM** — only rails. All guards run as interceptors before any LLM would be called:
+The NeMo config in `guard-only-config/` has **no main LLM** — only rails. All guards run as interceptors before any LLM would be called:
 
 **Input rail order:**
 1. `check input rail` — keywords + regex patterns (custom Python)

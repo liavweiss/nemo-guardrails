@@ -18,7 +18,7 @@ REBUILD=""
 RESTART_ONLY=""
 LOAD_ONLY=""
 DOCKER_NO_CACHE=""
-CONFIG_DIR="nemo-config"   # relative to REPO_ROOT; override with --config-dir
+CONFIG_DIR="guard-only-config"   # relative to REPO_ROOT; override with --config-dir
 
 usage() {
   cat <<'EOF'
@@ -32,8 +32,8 @@ Options:
   --help                    Show this help and exit.
   --docker                  Use Docker for build/load (default: podman).
   --config-dir <dir>        NeMo config directory to bake into the image
-                            (relative to repo root, default: nemo-config).
-                            e.g. --config-dir nemo-config-examples/01-keywords-patterns
+                            (relative to repo root, default: guard-only-config).
+                            e.g. --config-dir guard-only-examples/01-keywords-patterns
                             If the config dir has its own Dockerfile, it is used automatically.
   --rebuild                 Force: rebuild image, load into Kind, and restart the
                             deployment (rollout restart). Use after config or code changes.
@@ -45,10 +45,9 @@ Options:
   --skip-build              Skip build and load (only create cluster if needed and
                             apply/update K8s manifests). Useful when image is already loaded.
 
-Dockerfile auto-detection:
-  If <config-dir>/Dockerfile exists, it is used as the Dockerfile and <config-dir> is the
-  build context (self-contained example). Otherwise the root Dockerfile is used with
-  --build-arg CONFIG_DIR=<config-dir>.
+Build:
+  Every config directory must be self-contained: own Dockerfile + requirements.txt + config files.
+  The Dockerfile in <config-dir> is always used and <config-dir> is the build context.
 
 Environment:
   CLUSTER_NAME       Kind cluster name (default: guardrails).
@@ -60,8 +59,8 @@ Examples:
   ./scripts/setup-k8s-nemo.sh --docker              # use Docker instead of Podman
   ./scripts/setup-k8s-nemo.sh --rebuild
   ./scripts/setup-k8s-nemo.sh --rebuild --no-cache   # full rebuild (e.g. fix missing Presidio)
-  ./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/01-keywords-patterns
-  ./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/03-jailbreak-heuristics
+  ./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/01-keywords-patterns
+  ./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/03-jailbreak-heuristics
   ./scripts/setup-k8s-nemo.sh --load-only           # after manual build: load + restart
   ./scripts/setup-k8s-nemo.sh --restart-only
   ./scripts/setup-k8s-nemo.sh --help
@@ -122,8 +121,8 @@ fi
 if [[ ! -d "$REPO_ROOT/$CONFIG_DIR" ]]; then
   echo "Config directory not found: $REPO_ROOT/$CONFIG_DIR" >&2
   echo "Available configs:" >&2
-  ls "$REPO_ROOT/nemo-config-examples/" 2>/dev/null | sed 's/^/  nemo-config-examples\//' >&2
-  echo "  nemo-config  (production default)" >&2
+  ls "$REPO_ROOT/guard-only-examples/" 2>/dev/null | sed 's/^/  guard-only-examples\//' >&2
+  echo "  guard-only-config  (production default)" >&2
   exit 1
 fi
 echo "Config dir: $CONFIG_DIR"
@@ -203,16 +202,14 @@ echo ""
 DID_LOAD_IMAGE=""
 echo "[2/3] Build and load image (runtime: $CONTAINER_RUNTIME)..."
 if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
-  # Auto-detect Dockerfile: if the config dir has its own, use it (self-contained example).
-  # Otherwise fall back to the root Dockerfile with a --build-arg.
+  # Every config directory is self-contained (own Dockerfile + requirements.txt + config files).
   CONFIG_DIR_ABS="$REPO_ROOT/$CONFIG_DIR"
-  if [[ -f "$CONFIG_DIR_ABS/Dockerfile" ]]; then
-    echo "      Using example Dockerfile: $CONFIG_DIR/Dockerfile (context: $CONFIG_DIR)"
-    BUILD_ARGS=(-f "$CONFIG_DIR_ABS/Dockerfile" -t nemoguardrails:latest "$CONFIG_DIR_ABS")
-  else
-    echo "      Building image from $REPO_ROOT (config: $CONFIG_DIR)"
-    BUILD_ARGS=(--build-arg "CONFIG_DIR=$CONFIG_DIR" -t nemoguardrails:latest "$REPO_ROOT")
+  if [[ ! -f "$CONFIG_DIR_ABS/Dockerfile" ]]; then
+    echo "ERROR: No Dockerfile found in $CONFIG_DIR — every config dir must be self-contained." >&2
+    exit 1
   fi
+  echo "      Building image from $CONFIG_DIR (self-contained)"
+  BUILD_ARGS=(-f "$CONFIG_DIR_ABS/Dockerfile" -t nemoguardrails:latest "$CONFIG_DIR_ABS")
   [[ -n "$DOCKER_NO_CACHE" ]] && BUILD_ARGS=(--no-cache "${BUILD_ARGS[@]}")
   if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
     docker build "${BUILD_ARGS[@]}"

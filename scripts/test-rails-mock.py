@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test NeMo input + output rails using mock LLM responses (no API calls).
-Uses guardrails_k8s nemo-config (single config with both input and output rails).
+Uses guardrails_k8s guard-only-config (single config with both input and output rails).
 
 For testing the server in K8s (or any HTTP endpoint), use the curl-based script:
   ./scripts/test-rails-mock.sh
@@ -21,7 +21,7 @@ except ImportError:
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
-CONFIG_DIR = os.path.join(REPO_ROOT, "nemo-config")
+CONFIG_DIR = os.path.join(REPO_ROOT, "guard-only-config")
 
 BLOCKED_INPUT_HARMFUL = "I cannot help with that request as it may be harmful or illegal."
 BLOCKED_INPUT_SENSITIVE = "Please do not share passwords, API keys, or other sensitive data in chat."

@@ -15,7 +15,7 @@
 ## Deploy to K8s (standalone guard pod)
 
 ```bash
-./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/01-keywords-patterns
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/01-keywords-patterns
 kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000
 ```
 
@@ -47,4 +47,4 @@ curl -s -X POST http://localhost:8000/v1/chat/completions \
 
 ## Limitation
 
-Keywords and regex are brittle: they miss paraphrases and can have false positives. See `02-presidio-pii` for NER-based PII detection, or `../nemo-config/` for the full production config combining both.
+Keywords and regex are brittle: they miss paraphrases and can have false positives. See `02-presidio-pii` for NER-based PII detection, or `../guard-only-config/` for the full production config combining both.

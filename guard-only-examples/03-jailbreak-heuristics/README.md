@@ -58,7 +58,7 @@ curl -s -X POST http://localhost:8000/v1/chat/completions \
 ## Deploy to K8s (standalone guard pod)
 
 ```bash
-./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/03-jailbreak-heuristics
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/03-jailbreak-heuristics
 kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000
 ```
 

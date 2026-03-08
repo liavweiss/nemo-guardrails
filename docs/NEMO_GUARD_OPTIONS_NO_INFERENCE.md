@@ -22,7 +22,7 @@ So: **Presidio = protect user data (PII)**. **Jailbreak = protect the model from
 
 ## What is Implemented (No Inference)
 
-From `nemo-config/` (current state):
+From `guard-only-config/` (current state):
 
 | Guard | Status | Notes |
 |-------|--------|-------|
@@ -74,11 +74,11 @@ These require a **second pod** but that pod is tiny (no GPU, small model). The N
 | **GLiNER** | NER model — detects **any custom entity label** you define | Alternative/complement to Presidio PII | ~100 MB model |
 | **Jailbreak detection model** | Snowflake Arctic Embed + Random Forest (trained on real jailbreak data) | Complement to jailbreak heuristics | ~300 MB embed + tiny RF |
 
-**GLiNER** (`gliner detect pii on input/output`) — see [`02-presidio-pii/README.md`](../nemo-config-examples/02-presidio-pii/README.md#alternative-approaches-to-pii-detection) for full config and rationale.
+**GLiNER** (`gliner detect pii on input/output`) — see [`02-presidio-pii/README.md`](../guard-only-examples/02-presidio-pii/README.md#alternative-approaches-to-pii-detection) for full config and rationale.
 - Detects any label you define: `"passport number"`, `"internal employee id"`, or any domain-specific entity
 - Requires a GLiNER server: `python -m nemoguardrails.library.gliner.server --port 1235`
 
-**Jailbreak detection model** (`jailbreak detection model`) — see [`03-jailbreak-heuristics/README.md`](../nemo-config-examples/03-jailbreak-heuristics/README.md#alternative-approach-jailbreak-detection-model-snowflake--random-forest) for full config and rationale.
+**Jailbreak detection model** (`jailbreak detection model`) — see [`03-jailbreak-heuristics/README.md`](../guard-only-examples/03-jailbreak-heuristics/README.md#alternative-approach-jailbreak-detection-model-snowflake--random-forest) for full config and rationale.
 - Uses `Snowflake/snowflake-arctic-embed-m-long` (~300 MB) + NVIDIA RF classifier (`snowflake.pkl`) from [NemoGuard-JailbreakDetect](https://huggingface.co/nvidia/NemoGuard-JailbreakDetect)
 - Catches **semantically crafted** jailbreaks (natural language) that don't trigger perplexity anomalies; gpt2 catches GCG adversarial suffixes — use both for maximum coverage
 - Requires a jailbreak detection server: `python -m nemoguardrails.library.jailbreak_detection.server --mode=model`
@@ -123,23 +123,23 @@ So: for a **guard-only, no-inference** design, **do not** use self-check or topi
 
 ## Recommended Next Steps (Aligned with NVIDIA Docs)
 
-1. ✅ **Custom actions (keywords, regex)** — Done. See `nemo-config-examples/01-keywords-patterns/`.
+1. ✅ **Custom actions (keywords, regex)** — Done. See `guard-only-examples/01-keywords-patterns/`.
 
 2. ✅ **Presidio PII** — Done. Detects/blocks EMAIL, PHONE, CREDIT_CARD, SSN, PERSON on input and output.
-   See `nemo-config-examples/02-presidio-pii/`.
+   See `guard-only-examples/02-presidio-pii/`.
    **Alternative**: GLiNER for custom entity types — see `02-presidio-pii/README.md` for config.
 
 3. ✅ **Jailbreak heuristics** — Done. gpt2-large baked into image, pod limit 5 Gi.
-   See `nemo-config-examples/03-jailbreak-heuristics/`.
+   See `guard-only-examples/03-jailbreak-heuristics/`.
    **Alternative/Complement**: Jailbreak detection model (Snowflake + RF, ~300 MB, requires a server) — see `03-jailbreak-heuristics/README.md` for config.
 
 4. ✅ **Injection detection (YARA)** — Done. YARA rules on LLM output; catches code/SQLi/template/XSS.
-   See `nemo-config-examples/04-injection-detection/`.
+   See `guard-only-examples/04-injection-detection/`.
 
 5. **Llama Guard — Semantic content safety (separate guard model pod)**
    - Add `llama guard check input` flow, calling a Llama Guard 1B pod via Ollama.
    - Keeps "no inference" in the main NeMo pod; only the small guard model runs in a second pod.
-   - Planned as `nemo-config-examples/05-llama-guard/`.
+   - Planned as `guard-only-examples/05-llama-guard/`.
    - Official doc: [Llama Guard](https://docs.nvidia.com/nemo/guardrails/latest/user-guides/community/llama-guard.html)
 
 > ⚠️ **Topic Safety** (`topic safety check input`) — requires a main LLM (`llm_call()` confirmed from source). Skip for a guard-only pod.
