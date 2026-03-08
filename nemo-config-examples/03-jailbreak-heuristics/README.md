@@ -77,3 +77,70 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install nemoguardrails==0.20.0 transformers
 nemoguardrails server --config . --port 8000
 ```
+
+---
+
+## Alternative Approach: Jailbreak Detection Model (Snowflake + Random Forest)
+
+NeMo ships a second jailbreak detection method — **model-based** — which is a completely different approach from the perplexity heuristics above.
+
+### How it works
+
+1. **Snowflake Arctic Embed M Long** (embedding model, ~300 MB) converts the user message into a dense vector
+2. A **Random Forest classifier** (`snowflake.pkl`, trained by NVIDIA on real jailbreak data, tiny ~few MB) classifies the embedding as jailbreak or not
+
+NeMo flow: `jailbreak detection model`
+
+### Key differences vs heuristics
+
+| | Heuristics (this example) | Model-based |
+|---|---|---|
+| **Approach** | Perplexity scoring via gpt2-large | Embedding + Random Forest classifier |
+| **What it catches** | GCG adversarial suffixes, long convoluted prompts (unusual token patterns) | Semantically similar jailbreak prompts (trained on real jailbreak dataset) |
+| **Model size** | gpt2-large ~3 GB RAM | Snowflake Arctic Embed M Long ~300 MB + tiny RF pickle |
+| **Deployment** | In-process (or separate server) | Requires a **separate jailbreak detection server** |
+| **False positive risk** | Higher — perplexity catches unusual text broadly | Lower — trained classifier on actual jailbreak examples |
+| **Speed** | ~2 s in-process on CPU | ~50-100 ms via server |
+
+### When to use model-based instead of (or alongside) heuristics
+
+- **Smaller memory footprint**: ~300 MB vs ~3 GB — much lighter for the detection server pod
+- **Trained on real jailbreak data**: catches semantically crafted jailbreaks (natural language jailbreaks) that don't trigger perplexity anomalies
+- **Defense in depth**: use **both** — heuristics catches GCG adversarial suffixes, model-based catches natural-language jailbreaks. They cover different threat vectors
+
+### Deploying the jailbreak detection model server
+
+```bash
+# Start the model server (downloads Snowflake model + snowflake.pkl classifier)
+pip install nemoguardrails[jailbreak] sentence-transformers scikit-learn
+python -m nemoguardrails.library.jailbreak_detection.server \
+  --mode=model \
+  --port=1337 \
+  --classifier-path=/path/to/classifier_dir
+# classifier dir must contain snowflake.pkl from:
+# https://huggingface.co/nvidia/NemoGuard-JailbreakDetect
+```
+
+Then in `config.yml`:
+```yaml
+rails:
+  config:
+    jailbreak_detection:
+      server_endpoint: "http://jailbreak-server:1337/model"
+  input:
+    flows:
+      - jailbreak detection model   # instead of "jailbreak detection heuristics"
+```
+
+For **both** approaches in sequence (strongest coverage):
+```yaml
+  input:
+    flows:
+      - jailbreak detection heuristics   # fast: GCG/adversarial suffixes
+      - jailbreak detection model        # semantic: natural-language jailbreaks
+```
+
+### Reference
+
+- NVIDIA model: [NemoGuard-JailbreakDetect](https://huggingface.co/nvidia/NemoGuard-JailbreakDetect)
+- NeMo docs: [Jailbreak Detection](https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/guardrail-catalog.html#jailbreak-detection)
