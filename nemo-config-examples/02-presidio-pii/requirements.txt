@@ -1,0 +1,2 @@
+# [sdd] installs presidio-analyzer, presidio-anonymizer, and spacy
+nemoguardrails[sdd]==0.20.0

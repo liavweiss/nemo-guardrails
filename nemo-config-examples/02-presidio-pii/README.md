@@ -23,7 +23,16 @@ Output: **blocked** if the LLM reply leaks PII.
 NeMo's built-in `detect sensitive data on input` calls `bot inform answer unknown` (→ "I don't know the answer to that.").  
 We override the subflow in `config.co` to call `bot refuse to respond` instead — same Presidio action, custom message.
 
-## How to run
+## Deploy to K8s (standalone guard pod)
+
+```bash
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/02-presidio-pii
+kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000
+```
+
+The script auto-detects the `Dockerfile` in this directory (includes spaCy model bake-in).
+
+## Run locally (without K8s)
 
 ```bash
 pip install nemoguardrails[sdd]
