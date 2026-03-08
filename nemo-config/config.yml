@@ -1,8 +1,6 @@
 # Single config: input + output rails, no LLM (use mock or external LLM).
 # Guards: keyword/pattern checks + jailbreak heuristics (gpt2-large) + Presidio PII.
 #
-# Memory requirement: ~4-5 Gi (gpt2-large ~3 GB + spaCy en_core_web_lg ~700 MB + NeMo ~500 MB).
-# K8s deployment must have limits.memory >= 4Gi (see k8s/deployment.yaml).
 colang_version: "1.0"
 
 rails:
@@ -25,11 +23,8 @@ rails:
           - CREDIT_CARD
         score_threshold: 0.5
 
-    # Jailbreak heuristics: perplexity via gpt2-large (no server_endpoint = in-process).
-    # gpt2-large is baked into the Docker image (see Dockerfile) so the pod works offline in K8s.
-    # Production recommendation: deploy a separate jailbreak server and set server_endpoint.
+    # Jailbreak heuristics: perplexity via gpt2-large.
     jailbreak_detection:
-      # server_endpoint: "http://jailbreak-server:1337/heuristics"
       length_per_perplexity_threshold: 89.79
       prefix_suffix_perplexity_threshold: 1845.65
 
