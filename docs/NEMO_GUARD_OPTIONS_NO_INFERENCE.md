@@ -30,6 +30,7 @@ From `nemo-config/` (current state):
 | **Pattern / regex** | ✅ Done | SSN, card numbers, "my password is …", API keys |
 | **Message length** | ✅ Done | Reject overly long input |
 | **Presidio PII** | ✅ Done | EMAIL, PHONE, CREDIT_CARD, SSN, PERSON on input + output |
+| **Jailbreak heuristics** | ✅ Example only | gpt2-large needs ~3 GB RAM — too heavy for in-process in guard pod. See `nemo-config-examples/03-jailbreak-heuristics/`. Production: use `server_endpoint`. |
 
 All of the above: no LLM, no GPU, minimal footprint.
 
@@ -111,7 +112,11 @@ So: for a **guard-only, no-inference** design, **do not** use self-check flows o
 
 2. ✅ **Presidio PII** — Done. Detects/blocks EMAIL, PHONE, CREDIT_CARD, SSN, PERSON on input and output.
 
-3. **🟡 Injection detection (YARA) — Easy next win, no inference, no model**
+3. ✅ **Jailbreak heuristics** — Example only (`nemo-config-examples/03-jailbreak-heuristics/`).
+   gpt2-large needs ~3 GB RAM in-process — too heavy for the lightweight guard pod.
+   **Not included in the main `nemo-config/`**. For production: deploy a separate jailbreak server and configure `server_endpoint`.
+
+4. **🟡 Injection detection (YARA) — Easy next win, no inference, no model**
    - Detects code injection, SQLi, template injection (Jinja), XSS in **output** (good for agentic/RAG use cases).
    - Zero models: pure YARA rule-based. Install `pip install yara-python` (included in `nemoguardrails[jailbreak]`).
    - Just add to `config.yml`:
@@ -126,12 +131,6 @@ So: for a **guard-only, no-inference** design, **do not** use self-check flows o
            - injection detection
      ```
    - Official doc: [Injection Detection](https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/guardrail-catalog.html#injection-detection)
-
-4. **Jailbreak heuristics (perplexity) — Small model, guard pod stays no-inference**
-   - Add flow `jailbreak detection heuristics` and configure `jailbreak_detection`.
-   - Uses GPT-2 (`gpt2-large`) only for perplexity computation — not a chat LLM.
-   - Recommended: run as a **separate jailbreak server** (`server_endpoint`) for production (~2s per request on CPU).
-   - Official doc: [Jailbreak Detection](https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/guardrail-catalog.html#jailbreak-detection)
 
 5. **Smarter content safety (Llama Guard / Nemotron) — Separate small guard model**
    - Add `llama guard check input` / `content safety check input` flows with a dedicated safety model.

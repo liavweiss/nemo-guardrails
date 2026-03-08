@@ -1,0 +1,25 @@
+# Example: Jailbreak heuristics detection only (no LLM required).
+# Uses gpt2-large perplexity to detect adversarial / jailbreak prompts.
+#
+# Two heuristics:
+#   1. length_per_perplexity   — catches long, convoluted prompts (>89.79 = suspicious)
+#   2. prefix_suffix_perplexity — catches GCG adversarial suffix attacks (>1845.65 = suspicious)
+#
+# Requirements:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install transformers
+#
+# Production tip: offload perplexity scoring to a separate jailbreak server to avoid
+# the ~2s per-request latency. Set server_endpoint below and remove this comment.
+colang_version: "1.0"
+
+rails:
+  config:
+    jailbreak_detection:
+      # server_endpoint: "http://jailbreak-server:1337/heuristics"  # recommended for production
+      length_per_perplexity_threshold: 89.79
+      prefix_suffix_perplexity_threshold: 1845.65
+
+  input:
+    flows:
+      - jailbreak detection heuristics

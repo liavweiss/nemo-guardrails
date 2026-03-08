@@ -1,3 +1,6 @@
 nemoguardrails[sdd]==0.20.0
 # Presidio PII: also run after pip install:
 #   python -m spacy download en_core_web_lg
+
+# Jailbreak heuristics (perplexity via gpt2-large). torch is installed CPU-only in Dockerfile.
+transformers

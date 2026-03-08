@@ -55,3 +55,7 @@ define subflow detect sensitive data on output
   if $has_sensitive_data
     bot blocked_output
     stop
+
+# Note: jailbreak detection heuristics (gpt2-large perplexity) is not included in this config.
+# It requires ~3 GB RAM in-process — too heavy for a guard-only pod.
+# See nemo-config-examples/03-jailbreak-heuristics/ for the standalone example.

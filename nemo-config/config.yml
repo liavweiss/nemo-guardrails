@@ -1,10 +1,13 @@
 # Single config: input + output rails, no LLM (use mock or external LLM).
-# Includes: keyword/pattern checks (custom actions) + Presidio PII detection.
+# Guards: keyword/pattern checks + Presidio PII.
+#
+# Jailbreak heuristics (gpt2-large perplexity) is intentionally NOT included here.
+# gpt2-large requires ~3 GB RAM in-process — too heavy for a lightweight guard pod.
 colang_version: "1.0"
 
 rails:
   config:
-    # Presidio (PII): pick entities to detect. Full list: guardrails_k8s/PRESIDIO_SETUP.md
+    # Presidio (PII): pick entities to detect.
     sensitive_data_detection:
       input:
         entities:
@@ -24,7 +27,7 @@ rails:
   input:
     flows:
       - check input rail              # keywords + patterns (custom actions)
-      - detect sensitive data on input  # Presidio PII — uses our "bot refuse to respond" message
+      - detect sensitive data on input  # Presidio PII
   output:
     flows:
       - check output rail               # harmful keywords (custom actions)
