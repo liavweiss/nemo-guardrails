@@ -11,7 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install remaining deps. [sdd] = Presidio PII (presidio-analyzer, presidio-anonymizer, spacy)
+# Install PyTorch CPU-only first (much smaller than the default CUDA build, ~250 MB vs ~2.5 GB).
+# Jailbreak heuristics (perplexity via gpt2-large) needs torch; Presidio/NeMo do not need GPU.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining deps.
+# [sdd]      = presidio-analyzer, presidio-anonymizer, spacy (Presidio PII)
+# [jailbreak] = yara-python (YARA injection detection)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 # Presidio needs spaCy English model for NER (PII detection)

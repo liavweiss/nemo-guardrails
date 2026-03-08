@@ -1,5 +1,5 @@
 # Single config: input + output rails, no LLM (use mock or external LLM).
-# Guards: keyword/pattern checks + jailbreak heuristics (gpt2-large) + Presidio PII.
+# Guards: keyword/pattern + jailbreak heuristics (gpt2-large) + YARA injection + Presidio PII.
 #
 colang_version: "1.0"
 
@@ -23,10 +23,15 @@ rails:
           - CREDIT_CARD
         score_threshold: 0.5
 
-    # Jailbreak heuristics: perplexity via gpt2-large.
+    # Jailbreak heuristics: perplexity via gpt2-large (in-process, baked into image).
     jailbreak_detection:
       length_per_perplexity_threshold: 89.79
       prefix_suffix_perplexity_threshold: 1845.65
+
+    # Injection detection: YARA rules on bot output. Catches code, SQL and Jinja template injection.
+    injection_detection:
+      injections: [code, sqli, template, xss]
+      action: reject   # reject = block with message; omit = strip the offending content
 
   input:
     flows:
@@ -36,5 +41,6 @@ rails:
   output:
     flows:
       - check output rail               # harmful keywords (custom actions)
+      - injection detection             # YARA: code/SQLi/template/XSS in LLM response
       - detect sensitive data on output # Presidio PII on response
       - allow output

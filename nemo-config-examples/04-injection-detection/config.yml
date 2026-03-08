@@ -1,0 +1,19 @@
+# Example: Injection detection only (YARA rules on bot output).
+# Catches code injection, SQL injection, Jinja template injection, XSS in LLM responses.
+# Zero models, zero GPU, zero RAM overhead — pure YARA rule-based.
+# Requires: nemoguardrails[jailbreak] (installs yara-python)
+#
+# This guard is an OUTPUT rail: it inspects what the LLM returns, not what the user sends.
+# Useful when LLM output is passed downstream to databases, code interpreters, or HTML renderers.
+colang_version: "1.0"
+
+rails:
+  config:
+    injection_detection:
+      injections: [code, sqli, template, xss]
+      action: reject   # reject = block with message; omit = strip the offending content
+
+  output:
+    flows:
+      - injection detection
+      - allow output

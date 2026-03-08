@@ -1,0 +1,2 @@
+# [jailbreak] installs yara-python (YARA rules engine for injection detection)
+nemoguardrails[jailbreak]==0.20.0

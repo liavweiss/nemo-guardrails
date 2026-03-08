@@ -36,12 +36,13 @@ The NeMo pod exposes `/v1/chat/completions` (same API shape as OpenAI). BBR send
 
 | Guard | What it catches | How |
 |-------|----------------|-----|
-| **Keyword blocking** | Harmful phrases: "bomb", "hack", "weapon", … | Custom action — block list |
-| **Pattern / regex** | SSN format, 16-digit card numbers, "my password is …", API keys | Custom action — regex |
-| **Jailbreak heuristics** | DAN prompts, GCG adversarial suffix attacks | NeMo built-in — gpt2-large perplexity (CPU, baked into image) |
-| **Presidio PII** | Email addresses, phone numbers, credit cards, SSN, names | NeMo built-in + spaCy NER (CPU) |
-| **Output keyword blocking** | Same harmful phrases in LLM replies | Custom action on output |
-| **Presidio PII on output** | PII leaking in LLM responses | NeMo built-in + spaCy NER (CPU) |
+| **Keyword blocking** | Harmful phrases: "bomb", "hack", "weapon", … | Custom action — block list (input) |
+| **Pattern / regex** | SSN format, 16-digit card numbers, "my password is …", API keys | Custom action — regex (input) |
+| **Jailbreak heuristics** | DAN prompts, GCG adversarial suffix attacks | NeMo built-in — gpt2-large perplexity, CPU, baked into image (input) |
+| **Injection detection** | Code injection, SQLi, Jinja template injection, XSS in LLM replies | NeMo built-in — YARA rules, zero models (output) |
+| **Presidio PII** | Email addresses, phone numbers, credit cards, SSN, names | NeMo built-in + spaCy NER, CPU (input) |
+| **Output keyword blocking** | Same harmful phrases in LLM replies | Custom action (output) |
+| **Presidio PII on output** | PII leaking in LLM responses | NeMo built-in + spaCy NER, CPU (output) |
 
 All guards run **without any main LLM** — the pod is purely a rule/ML-based filter.  
 See [`docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md`](docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md) for the full options map.
@@ -61,7 +62,8 @@ nemo-guardrails/
 ├── nemo-config-examples/         # standalone examples — one guard per directory
 │   ├── 01-keywords-patterns/     # keyword + regex only (lightest, ~600 MB image)
 │   ├── 02-presidio-pii/          # Presidio PII only (~1.5 GB image)
-│   └── 03-jailbreak-heuristics/  # jailbreak heuristics only (~4 GB image, gpt2-large)
+│   ├── 03-jailbreak-heuristics/  # jailbreak heuristics only (~4 GB image, gpt2-large)
+│   └── 04-injection-detection/   # YARA code/SQLi/template/XSS detection (~600 MB image)
 ├── k8s/                          # Kubernetes manifests (namespace, deployment, service)
 ├── scripts/
 │   ├── setup-k8s-nemo.sh         # build + load + deploy to Kind; auto-detects example Dockerfiles
@@ -107,9 +109,12 @@ nemo-guardrails/
 # Presidio PII only      — see nemo-config-examples/02-presidio-pii/README.md
 ./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/02-presidio-pii
 
-# Jailbreak heuristics only — see nemo-config-examples/03-jailbreak-heuristics/README.md
-./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/03-jailbreak-heuristics
-```
+       # Jailbreak heuristics only — see nemo-config-examples/03-jailbreak-heuristics/README.md
+       ./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/03-jailbreak-heuristics
+
+       # Injection detection (YARA) only — see nemo-config-examples/04-injection-detection/README.md
+       ./scripts/setup-k8s-nemo.sh --rebuild --config-dir nemo-config-examples/04-injection-detection
+       ```
 
 The script auto-detects the `Dockerfile` inside the example directory and uses it as the build context.
 
@@ -160,7 +165,10 @@ The NeMo config in `nemo-config/` has **no main LLM** — only rails. All guards
 
 **Output rail order:**
 1. `check output rail` — output keyword blocking (custom Python)
-2. `detect sensitive data on output` — Presidio PII on responses (NeMo built-in, overridden)
-3. `allow output` — pass-through response
+2. `injection detection` — YARA rules: blocks code injection, SQLi, template injection, XSS in LLM replies
+3. `detect sensitive data on output` — Presidio PII on responses (NeMo built-in, overridden)
+4. `allow output` — pass-through response
 
 The `detect sensitive data on input/output` flows call NeMo's built-in `execute detect_sensitive_data(...)` action (which runs Presidio + spaCy internally) but we override the subflow in `config.co` to return our own block messages instead of NeMo's default "I don't know the answer to that."
+
+The `injection detection` flow calls NeMo's built-in `execute injection_detection(...)` action (which runs YARA rules internally) — also overridden in `config.co` to use our `bot blocked_injection` message.

@@ -1,0 +1,24 @@
+# Example: Injection detection only (YARA rules).
+# Overrides NeMo's built-in "injection detection" flow to use a clean custom message
+# instead of the default "I'm sorry, the desired output triggered rule(s) designed to
+# mitigate exploitation of <detection names>."
+
+define bot allow
+  "Request allowed."
+
+define bot blocked_injection
+  "Response blocked: the answer contained potentially dangerous code or injection patterns."
+
+# Override NeMo's built-in injection detection flow.
+# Still uses the built-in injection_detection action (YARA), just our message.
+
+define subflow injection detection
+  $response = execute injection_detection(text=$bot_message)
+  if $response["is_injection"]
+    bot blocked_injection
+    stop
+  $bot_message = $response["text"]
+
+define subflow allow output
+  bot allow
+  stop

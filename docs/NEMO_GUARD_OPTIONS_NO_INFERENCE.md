@@ -30,6 +30,7 @@ From `nemo-config/` (current state):
 | **Pattern / regex** | ✅ Done | SSN, card numbers, "my password is …", API keys |
 | **Presidio PII** | ✅ Done | EMAIL, PHONE, CREDIT_CARD, SSN, PERSON on input + output |
 | **Jailbreak heuristics** | ✅ Done | gpt2-large baked into image, pod limit 5 Gi. DAN + GCG adversarial detection on input. |
+| **Injection detection (YARA)** | ✅ Done | code/SQLi/template/XSS in LLM output. Zero models, yara-python only. |
 
 All of the above: no LLM, no GPU, minimal footprint.
 
@@ -115,21 +116,9 @@ So: for a **guard-only, no-inference** design, **do not** use self-check flows o
    Pod memory limit set to 5 Gi (see `k8s/deployment.yaml`). Also available as standalone in `nemo-config-examples/03-jailbreak-heuristics/`.
    For production at scale: deploy a separate jailbreak server and configure `server_endpoint`.
 
-4. **🟡 Injection detection (YARA) — Easy next win, no inference, no model**
-   - Detects code injection, SQLi, template injection (Jinja), XSS in **output** (good for agentic/RAG use cases).
-   - Zero models: pure YARA rule-based. Install `pip install yara-python` (included in `nemoguardrails[jailbreak]`).
-   - Just add to `config.yml`:
-     ```yaml
-     rails:
-       config:
-         injection_detection:
-           injections: [code, sqli, template, xss]
-           action: reject   # or omit
-       output:
-         flows:
-           - injection detection
-     ```
-   - Official doc: [Injection Detection](https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/guardrail-catalog.html#injection-detection)
+4. ✅ **Injection detection (YARA)** — Done. YARA rules on LLM output; catches code/SQLi/template/XSS.
+   Zero models, pure rule-based. See `nemo-config-examples/04-injection-detection/` for standalone example.
+   Official doc: [Injection Detection](https://docs.nvidia.com/nemo/guardrails/latest/configure-rails/guardrail-catalog.html#injection-detection)
 
 5. **Smarter content safety (Llama Guard / Nemotron) — Separate small guard model**
    - Add `llama guard check input` / `content safety check input` flows with a dedicated safety model.
