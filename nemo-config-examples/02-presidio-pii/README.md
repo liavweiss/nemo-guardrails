@@ -72,3 +72,72 @@ output:
 ```
 
 Then the message is allowed through with PII replaced by labels.
+
+---
+
+## Alternative Approaches to PII Detection
+
+### GLiNER (detect any custom entity type)
+
+**What it is:** [GLiNER](https://github.com/urchade/GLiNER) (Generalist Lightweight model for Named Entity Recognition) is a small NER model (~100 MB) that can detect **any entity label you define** — not just the fixed Presidio list. You could detect `"product_code"`, `"internal_id"`, `"passport_number"`, or any domain-specific entity without retraining.
+
+**Key difference from Presidio:**
+
+| | Presidio | GLiNER |
+|---|---|---|
+| Entity types | Fixed list (EMAIL, PHONE, SSN, etc.) | Any label you define as a string |
+| Model | spaCy `en_core_web_lg` (~700 MB) | GLiNER model (~100 MB) |
+| Deployment | Embedded in NeMo pod | Requires a **separate GLiNER server pod** |
+| Custom entities | Add recognizers in code | Just add a label string in config |
+
+**NeMo built-in flows:**
+```colang
+gliner detect pii on input
+gliner detect pii on output
+gliner mask pii on input      # mask instead of block
+gliner mask pii on output
+```
+
+**Config example** (once a GLiNER server is running):
+```yaml
+rails:
+  config:
+    gliner:
+      server_endpoint: "http://gliner-service:1235/v1/extract"
+      threshold: 0.5
+      input:
+        entities:
+          - "email address"
+          - "phone number"
+          - "passport number"       # custom — not in Presidio
+          - "internal employee id"  # domain-specific
+      output:
+        entities:
+          - "email address"
+          - "credit card number"
+  input:
+    flows:
+      - gliner detect pii on input
+  output:
+    flows:
+      - gliner detect pii on output
+      - allow output
+```
+
+**GLiNER server** (runs as a separate K8s pod, CPU-only):
+```bash
+pip install gliner-spacy gliner
+# NeMo provides a built-in GLiNER server:
+python -m nemoguardrails.library.gliner.server --port 1235
+```
+
+**When to use GLiNER over Presidio:**
+- You need to detect domain-specific entities that Presidio doesn't support
+- You want a smaller model footprint (~100 MB vs ~700 MB for spaCy)
+- You want easy entity customization without writing custom recognizers
+
+**Architecture:** Two pods — NeMo guard pod (unchanged) + GLiNER server pod. The NeMo pod makes HTTP calls to the GLiNER server, identical in structure to the Llama Guard architecture.
+
+### Private AI (commercial cloud API)
+
+[Private AI](https://www.private-ai.com/) is a commercial PII detection and anonymization API. NeMo has a built-in integration (`detect pii on input`, `mask pii on input`). No local model — pure API call. Suitable if you prefer a managed service over running your own model.
