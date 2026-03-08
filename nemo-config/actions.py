@@ -41,12 +41,3 @@ def check_output_harmful_keywords(text: str) -> bool:
     return any(phrase in lower for phrase in BLOCKED_PHRASES)
 
 
-MAX_INPUT_LENGTH = 5000
-
-
-@action()
-def check_message_length(text: str, max_length: int = MAX_INPUT_LENGTH) -> bool:
-    """Return True if the message is over max_length and should be blocked. No LLM."""
-    if not text or not isinstance(text, str):
-        return False
-    return len(text.strip()) > max_length

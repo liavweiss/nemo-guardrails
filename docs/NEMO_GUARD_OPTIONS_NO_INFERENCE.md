@@ -28,7 +28,6 @@ From `nemo-config/` (current state):
 |-------|--------|-------|
 | **Keyword blocking** | ✅ Done | Block list of harmful phrases on input + output |
 | **Pattern / regex** | ✅ Done | SSN, card numbers, "my password is …", API keys |
-| **Message length** | ✅ Done | Reject overly long input |
 | **Presidio PII** | ✅ Done | EMAIL, PHONE, CREDIT_CARD, SSN, PERSON on input + output |
 | **Jailbreak heuristics** | ✅ Example only | gpt2-large needs ~3 GB RAM — too heavy for in-process in guard pod. See `nemo-config-examples/03-jailbreak-heuristics/`. Production: use `server_endpoint`. |
 
@@ -99,7 +98,7 @@ These **require an LLM** to be configured and called by NeMo (e.g. for prompts).
 
 So: for a **guard-only, no-inference** design, **do not** use self-check flows or other flows that call the main LLM. Use only:
 
-- Custom actions (keywords, regex, length), **and/or**
+- Custom actions (keywords, regex), **and/or**
 - Presidio (PII), **and/or**
 - Jailbreak heuristics (perplexity), **and/or**
 - A separate small guard model (Llama Guard, etc.) if you want to add “smarter” guards without running the main app LLM in the guard pod.
@@ -108,7 +107,7 @@ So: for a **guard-only, no-inference** design, **do not** use self-check flows o
 
 ## Recommended Next Steps (Aligned with NVIDIA Docs)
 
-1. ✅ **Custom actions (keywords, regex, length)** — Done.
+1. ✅ **Custom actions (keywords, regex)** — Done.
 
 2. ✅ **Presidio PII** — Done. Detects/blocks EMAIL, PHONE, CREDIT_CARD, SSN, PERSON on input and output.
 
