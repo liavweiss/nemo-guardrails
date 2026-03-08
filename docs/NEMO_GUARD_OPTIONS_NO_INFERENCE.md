@@ -29,7 +29,7 @@ From `nemo-config/` (current state):
 | **Keyword blocking** | ✅ Done | Block list of harmful phrases on input + output |
 | **Pattern / regex** | ✅ Done | SSN, card numbers, "my password is …", API keys |
 | **Presidio PII** | ✅ Done | EMAIL, PHONE, CREDIT_CARD, SSN, PERSON on input + output |
-| **Jailbreak heuristics** | ✅ Example only | gpt2-large needs ~3 GB RAM — too heavy for in-process in guard pod. See `nemo-config-examples/03-jailbreak-heuristics/`. Production: use `server_endpoint`. |
+| **Jailbreak heuristics** | ✅ Done | gpt2-large baked into image, pod limit 5 Gi. DAN + GCG adversarial detection on input. |
 
 All of the above: no LLM, no GPU, minimal footprint.
 
@@ -111,9 +111,9 @@ So: for a **guard-only, no-inference** design, **do not** use self-check flows o
 
 2. ✅ **Presidio PII** — Done. Detects/blocks EMAIL, PHONE, CREDIT_CARD, SSN, PERSON on input and output.
 
-3. ✅ **Jailbreak heuristics** — Example only (`nemo-config-examples/03-jailbreak-heuristics/`).
-   gpt2-large needs ~3 GB RAM in-process — too heavy for the lightweight guard pod.
-   **Not included in the main `nemo-config/`**. For production: deploy a separate jailbreak server and configure `server_endpoint`.
+3. ✅ **Jailbreak heuristics** — Done. Included in `nemo-config/` with gpt2-large baked into the image.
+   Pod memory limit set to 5 Gi (see `k8s/deployment.yaml`). Also available as standalone in `nemo-config-examples/03-jailbreak-heuristics/`.
+   For production at scale: deploy a separate jailbreak server and configure `server_endpoint`.
 
 4. **🟡 Injection detection (YARA) — Easy next win, no inference, no model**
    - Detects code injection, SQLi, template injection (Jinja), XSS in **output** (good for agentic/RAG use cases).

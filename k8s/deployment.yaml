@@ -34,9 +34,8 @@ spec:
             requests:
               memory: "1Gi"
               cpu: "100m"
-            # Main config (keywords + Presidio PII): ~1.5 Gi peak (spaCy en_core_web_lg).
-            # Jailbreak example (gpt2-large in-process): needs ~4 Gi — override with:
-            #   kubectl set resources deployment/nemo-guardrails -n nemo-guardrails --limits=memory=5Gi
+            # gpt2-large (~3 GB) + spaCy (~700 MB) + NeMo (~500 MB) = ~4 Gi peak at runtime.
+            # Limit must be >= 4 Gi to avoid OOMKill during gpt2-large inference.
             limits:
-              memory: "2Gi"
+              memory: "5Gi"
               cpu: "1000m"

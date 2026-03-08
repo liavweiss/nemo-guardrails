@@ -17,6 +17,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Presidio needs spaCy English model for NER (PII detection)
 RUN python -m spacy download en_core_web_lg
 
+# Pre-bake gpt2-large for jailbreak heuristics so the pod works offline in K8s.
+# NeMo loads this at module import time on first jailbreak-checked request;
+# without baking, Kind pods (no outbound internet) hang and crash.
+RUN python -c "\
+from transformers import GPT2LMHeadModel, GPT2TokenizerFast; \
+GPT2LMHeadModel.from_pretrained('gpt2-large'); \
+GPT2TokenizerFast.from_pretrained('gpt2-large'); \
+print('gpt2-large cached.')"
+
 # NeMo config directory (override with: docker build --build-arg CONFIG_DIR=nemo-config-examples/02-presidio-pii)
 ARG CONFIG_DIR=nemo-config
 COPY ${CONFIG_DIR} /config

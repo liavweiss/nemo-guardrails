@@ -8,6 +8,9 @@ define bot blocked_harmful
 define bot blocked_sensitive
   "Please do not share passwords, API keys, or other sensitive data in chat."
 
+define bot blocked_jailbreak
+  "I'm sorry, I cannot respond to that request. It appears to be attempting to bypass safety guidelines."
+
 define bot allow
   "Request allowed."
 
@@ -56,6 +59,11 @@ define subflow detect sensitive data on output
     bot blocked_output
     stop
 
-# Note: jailbreak detection heuristics (gpt2-large perplexity) is not included in this config.
-# It requires ~3 GB RAM in-process — too heavy for a guard-only pod.
-# See nemo-config-examples/03-jailbreak-heuristics/ for the standalone example.
+# Override NeMo's built-in jailbreak subflow to use our custom message instead of
+# "bot refuse to respond" (which we already use for PII).
+
+define subflow jailbreak detection heuristics
+  $is_jailbreak = execute jailbreak_detection_heuristics
+  if $is_jailbreak
+    bot blocked_jailbreak
+    stop
