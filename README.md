@@ -53,9 +53,9 @@ See [`docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md`](docs/NEMO_GUARD_OPTIONS_NO_INFER
 
 ```
 nemo-guardrails/
-├── Dockerfile                    # guard pod image: python:3.11-slim, no GPU, gpt2-large baked in
-├── requirements.txt              # nemoguardrails[sdd] + transformers (gpt2-large)
-├── guard-only-config/                  # production: ALL guard-only guards combined (single pod, no inference)
+├── guard-only-config/            # production: ALL guard-only guards combined (single pod, no inference)
+│   ├── Dockerfile                # guard pod image: python:3.11-slim, no GPU, gpt2-large baked in
+│   ├── requirements.txt          # nemoguardrails[sdd] + transformers (gpt2-large)
 │   ├── config.yml                # rails: keywords + jailbreak + Presidio + YARA; memory: 5 Gi
 │   ├── config.co                 # Colang 1.x: bot messages, subflow overrides
 │   └── actions.py                # custom Python actions (keywords, regex)
@@ -68,18 +68,32 @@ nemo-guardrails/
 │
 ├── model-guard-examples/         # guards requiring a separate inference pod (NeMo pod + model pod)
 │   └── 05-llama-guard/           # semantic content safety via Llama Guard 3 1B (Ollama, CPU)
+│       ├── Dockerfile
+│       ├── requirements.txt
+│       ├── config.yml
+│       ├── config.co
+│       ├── prompts.yml
+│       └── k8s/
+│           ├── nemo-deployment.yaml
+│           ├── nemo-service.yaml
+│           ├── ollama-deployment.yaml
+│           └── ollama-service.yaml
 │
-├── k8s/                          # Kubernetes manifests (namespace, deployment, service)
+├── k8s/                          # shared Kubernetes manifests (namespace, default deployment/service)
+│   ├── namespace.yaml
+│   ├── kind-config.yaml
+│   ├── deployment.yaml
+│   └── service.yaml
 ├── scripts/
-│   ├── setup-k8s-nemo.sh         # build + load + deploy to Kind; auto-detects example Dockerfiles
+│   ├── setup-k8s-nemo.sh         # build + load + deploy to Kind; auto-detects example tier
 │   ├── test-rails-mock.sh        # curl-based test suite against the live server
-│   ├── test-rails-mock.py        # Python test (mock LLM, no server needed)
-│   └── verify-nemo-endpoint.sh   # quick sanity check: is port 8000 actually NeMo?
-└── docs/
-    ├── BUILD_AND_TEST.md         # how to build, deploy, and test
-    ├── PRESIDIO_SETUP.md         # Presidio PII guard details
-    ├── NEMO_GUARD_OPTIONS_NO_INFERENCE.md  # full map of guard options
-    └── HTTP_403_ON_BLOCK.md      # how to get HTTP 403 on guard block
+│   └── test-rails-mock.py        # Python test (mock LLM, no server needed)
+├── docs/
+│   ├── BUILD_AND_TEST.md         # how to build, deploy, and test
+│   ├── PRESIDIO_SETUP.md         # Presidio PII guard details
+│   ├── NEMO_GUARD_OPTIONS_NO_INFERENCE.md  # full map of guard options
+│   └── HTTP_403_ON_BLOCK.md      # how to get HTTP 403 on guard block
+└── demo/                         # recorded demo videos
 ```
 
 ---
