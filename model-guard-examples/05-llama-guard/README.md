@@ -1,30 +1,24 @@
 # 05 — Llama Guard 3 1B (Semantic Content Safety)
 
-**Tier: Model-guard** — requires two pods (NeMo guard pod + Ollama model pod).
+**Tier: Model-guard** — single pod with two containers (NeMo + Ollama sidecar).
 
-Unlike the `guard-only-examples/` (single pod, no inference), this example adds **semantic safety classification** using Meta's [Llama Guard 3 1B](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama-guard-3/) model served via [Ollama](https://ollama.com/). The NeMo pod stays lightweight — all inference happens in the Ollama pod.
+Unlike the `guard-only-examples/` (single pod, no inference), this example adds **semantic safety classification** using Meta's [Llama Guard 3 1B](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama-guard-3/) model served via [Ollama](https://ollama.com/). NeMo and Ollama run as sidecar containers in the same pod — NeMo stays lightweight and calls Ollama over `localhost`.
 
 ---
 
 ## What it catches
 
-Llama Guard 3 1B classifies every user message and bot response against 13 safety categories:
+Llama Guard 3 1B classifies every user message against 7 safety categories (defined in `prompts.yml`):
 
 | Code | Category | Examples |
 |------|----------|---------|
-| S1 | Violent Crimes | Weapons, assault, kidnapping, cybercrime |
-| S2 | Non-Violent Crimes | Fraud, scams, drug crimes, stalking |
-| S3 | Sex Crimes | Sexual assault, harassment, trafficking |
-| S4 | Child Exploitation | CSAM, child abuse |
-| S5 | Defamation | False statements about real people |
-| S6 | Specialized Advice | Harmful medical/legal/financial advice |
-| S7 | Privacy | PII of private individuals without consent |
-| S8 | Intellectual Property | Copyright/IP violations |
-| S9 | Indiscriminate Weapons | CBRN weapons, critical infrastructure attacks |
-| S10 | Hate | Discrimination based on protected characteristics |
-| S11 | Suicide & Self-Harm | Self-harm encouragement, suicide methods |
-| S12 | Sexual Content | Explicit adult content |
-| S13 | Elections | Election misinformation, voter suppression |
+| O1 | Violence and Hate | Weapons, assault, hateful language, discrimination |
+| O2 | Sexual Content | Explicit adult content |
+| O3 | Criminal Planning | Theft, kidnapping, financial crimes |
+| O4 | Guns and Illegal Weapons | Firearm crimes, illegal weapons |
+| O5 | Regulated / Controlled Substances | Drug trafficking, illegal substance creation |
+| O6 | Self-Harm | Suicide methods, self-harm encouragement |
+| O7 | Offensive Language and Insults | Slurs, derogatory language, targeted insults |
 
 **Why Llama Guard vs guard-only rules:**
 - Rule-based guards (keywords, YARA, regex) miss paraphrases and nuanced context
@@ -39,24 +33,33 @@ Llama Guard 3 1B classifies every user message and bot response against 13 safet
 User Request
      │
      ▼
-┌─────────────────────────┐      HTTP to /v1/completions
-│  NeMo Guard Pod         │ ────────────────────────────► ┌──────────────────┐
-│  (port 8000)            │                               │  Ollama Pod      │
-│                         │ ◄──────────────────────────── │  (port 11434)    │
-│  - llama guard          │    "safe" / "unsafe\nS1"      │  llama-guard3:1b │
-│    check input          │                               │  Q4 quantized    │
-│  - llama guard          │                               │  CPU-only        │
-│    check output         │                               │  ~700 MB         │
-└─────────────────────────┘                               └──────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Single Pod  (nemo-guardrails namespace)                 │
+│                                                          │
+│  ┌─────────────────────────┐    localhost:11434          │
+│  │  NeMo container         │ ──────────────────────────► │
+│  │  (port 8000)            │ ◄────────────────────────── │
+│  │  - llama guard          │    "safe" / "unsafe\nO1"    │
+│  │    check input          │                             │
+│  └─────────────────────────┘                             │
+│                                                          │
+│  ┌─────────────────────────┐                             │
+│  │  Ollama sidecar         │                             │
+│  │  (port 11434)           │                             │
+│  │  llama-guard3:1b        │                             │
+│  │  Q4 quantized, CPU-only │                             │
+│  └─────────────────────────┘                             │
+└──────────────────────────────────────────────────────────┘
 ```
 
-Both pods run in the `nemo-guardrails` namespace. The NeMo pod calls `http://ollama:11434/v1` (Kubernetes DNS).
+NeMo and Ollama share the same pod network namespace — NeMo calls `http://localhost:11434/v1` (no K8s DNS hop).
+An **init container** pulls `llama-guard3:1b` into a shared volume before the pod starts, so Ollama is ready immediately on each (re)start.
 
 ---
 
 ## Prerequisites
 
-- Kind cluster (see `scripts/setup.sh` — it creates one if needed)
+- Kind cluster (see `scripts/setup-k8s-nemo.sh` — it creates one if needed)
 - `podman` (default) or `docker`
 - `kubectl` + `kind` CLI
 - `curl` + `jq` for testing
@@ -71,7 +74,7 @@ Uses the same `setup-k8s-nemo.sh` script as all other examples — it auto-detec
 ```bash
 # From repo root:
 
-# First time (creates cluster, builds NeMo image, pulls Ollama image, deploys both pods)
+# First time (creates cluster, builds NeMo image, pre-loads Ollama image, deploys pod)
 ./scripts/setup-k8s-nemo.sh --config-dir model-guard-examples/05-llama-guard
 
 # Rebuild NeMo image after config changes
@@ -81,10 +84,10 @@ Uses the same `setup-k8s-nemo.sh` script as all other examples — it auto-detec
 ./scripts/setup-k8s-nemo.sh --docker --rebuild --config-dir model-guard-examples/05-llama-guard
 ```
 
-> **First run warning:** The Ollama pod downloads `llama-guard3:1b` (~700 MB) at startup.
-> The readiness probe allows up to 15 minutes. Watch progress:
+> **First run warning:** The init container pulls `llama-guard3:1b` (~700 MB) before the pod starts.
+> This takes ~5-10 min on first run. Watch progress:
 > ```bash
-> kubectl logs -f -n nemo-guardrails deploy/ollama
+> kubectl logs -f -n nemo-guardrails -l app=nemo-guardrails -c model-puller
 > ```
 
 ---
@@ -129,25 +132,29 @@ curl -s -X POST http://localhost:8000/v1/chat/completions \
 
 ## Resource requirements
 
-| Pod | CPU | RAM | Notes |
-|-----|-----|-----|-------|
-| NeMo guard | 200m req / 1 cpu max | 256 Mi req / 1 Gi max | No model, pure proxy |
-| Ollama | 500m req / 2 cpu max | 1 Gi req / 3 Gi max | llama-guard3:1b Q4 ~1.5 GB |
+Single pod with two containers:
 
-**Latency (CPU):** ~1–3 s per call (Ollama inference on CPU). For production throughput, add more Ollama replicas or use a GPU node.
+| Container | CPU | RAM | Notes |
+|-----------|-----|-----|-------|
+| nemo-guardrails | 200m req / 1 cpu max | 256 Mi req / 1 Gi max | No model, pure proxy |
+| ollama (sidecar) | 500m req / 2 cpu max | 1 Gi req / 3 Gi max | llama-guard3:1b Q4 ~1.5 GB |
+| model-puller (init) | 200m req / 2 cpu max | 512 Mi req / 2 Gi max | Runs once at pod startup, then exits |
+
+**Latency (CPU):** ~60–90 s per call on a small CPU node. For production throughput, use a GPU node (~1–3 s).
 
 ---
 
 ## How NeMo integrates with Llama Guard
 
-The NeMo `llama guard check input` built-in flow:
+Config uses `colang_version: "1.0"` and `rails.input.flows: - llama guard check input`. In Colang 1.x mode NeMo auto-populates `context["user_message"]` before running input rails, which is what `LlamaGuardCheckInputAction` reads.
 
-1. Renders `prompts.yml` task `llama_guard_check_input` with `{{ user_input }}` substituted
-2. Sends the formatted Llama Guard 3 prompt to Ollama via the `vllm_openai` engine (`/v1/completions`)
-3. Parses the response: `safe` → allow, `unsafe\nS1,S3` → block
-4. If blocked: calls `bot refuse to respond` (overridden in `config.co` with our custom message)
+The `llama guard check input` flow (overridden in `config.co`):
 
-The `prompts.yml` in this directory uses the **Llama Guard 3 format** (Llama 3 special tokens, S1–S13 categories). The default NeMo prompts use the older LlamaGuard 1 format (O1–O7) and would not produce correct results with `llama-guard3:1b`.
+1. Calls `execute llama_guard_check_input` — renders `prompts.yml` task `llama_guard_check_input` with `{{ user_input }}` substituted
+2. Sends the prompt to Ollama via `engine: openai` (LangChain `ChatOpenAI` → `localhost:11434/v1/chat/completions`)
+3. Parses the response: `safe` → allow, `unsafe\nO1` → block
+4. Blocked: responds with our custom refusal message and `stop` (no main LLM needed)
+5. Allowed: responds with `"Request allowed."` and `stop`
 
 ---
 

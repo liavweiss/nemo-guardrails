@@ -66,18 +66,16 @@ nemo-guardrails/
 │   ├── 03-jailbreak-heuristics/  # jailbreak heuristics only (~4 GB image, gpt2-large)
 │   └── 04-injection-detection/   # YARA code/SQLi/template/XSS detection (~600 MB image)
 │
-├── model-guard-examples/         # guards requiring a separate inference pod (NeMo pod + model pod)
-│   └── 05-llama-guard/           # semantic content safety via Llama Guard 3 1B (Ollama, CPU)
+├── model-guard-examples/         # guards that include a model sidecar (single pod: NeMo + Ollama)
+│   └── 05-llama-guard/           # semantic content safety via Llama Guard 3 1B (Ollama sidecar, CPU)
 │       ├── Dockerfile
 │       ├── requirements.txt
 │       ├── config.yml
 │       ├── config.co
 │       ├── prompts.yml
 │       └── k8s/
-│           ├── nemo-deployment.yaml
-│           ├── nemo-service.yaml
-│           ├── ollama-deployment.yaml
-│           └── ollama-service.yaml
+│           ├── nemo-deployment.yaml  # single pod: NeMo + Ollama sidecar + init container (model pull)
+│           └── nemo-service.yaml
 │
 ├── k8s/                          # shared Kubernetes manifests (namespace, default deployment/service)
 │   ├── namespace.yaml
@@ -135,7 +133,7 @@ nemo-guardrails/
 ./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/04-injection-detection
 ```
 
-**Deploy a model-guard example** (NeMo pod + separate inference pod — see `model-guard-examples/`):
+**Deploy a model-guard example** (single pod: NeMo + Ollama sidecar — see `model-guard-examples/`):
 
 ```bash
 # Llama Guard semantic safety — see model-guard-examples/05-llama-guard/README.md
@@ -172,10 +170,11 @@ curl -s -X POST http://localhost:8000/v1/chat/completions \
   -d '{"config_id":"config","messages":[{"role":"user","content":"What is 2+2?"}],"options":{"rails":{"input":true,"output":true,"dialog":false}}}' | jq .
 ```
 
-### Verify the pod is running the correct image
+### Verify the pod is running
 
 ```bash
-./scripts/verify-nemo-endpoint.sh 8000
+kubectl get pods -n nemo-guardrails
+kubectl logs -n nemo-guardrails -l app=nemo-guardrails -c nemo-guardrails --tail=20
 ```
 
 ---
