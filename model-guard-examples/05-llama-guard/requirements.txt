@@ -1,0 +1,7 @@
+# NeMo Guardrails — base install only (no torch/spaCy/gpt2 extras needed for Llama Guard).
+# engine: openai uses langchain-openai's ChatOpenAI pointing to Ollama's
+# /v1/chat/completions endpoint (OpenAI-compatible). This avoids the array-prompt
+# issue that engine: vllm_openai has with Ollama's /v1/completions.
+nemoguardrails==0.20.0
+langchain-openai      # provides ChatOpenAI (used by engine: openai)
+langchain-community   # pulled in by nemoguardrails transitively

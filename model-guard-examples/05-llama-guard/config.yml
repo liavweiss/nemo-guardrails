@@ -1,0 +1,32 @@
+# 05-llama-guard: semantic content safety via Llama Guard 3 1B (Ollama, CPU).
+#
+# Architecture: TWO pods.
+#   - This NeMo pod: guard logic only, no main LLM, lightweight (~200 MB image).
+#   - Ollama pod:    serves llama-guard3:1b (~700 MB quantized, CPU, ~2 GB RAM).
+#
+
+# engine: openai → LangChain ChatOpenAI → /v1/chat/completions (Ollama-compatible).
+# This avoids the array-prompt issue that engine: vllm_openai has with Ollama's
+# /v1/completions endpoint (which rejects prompt arrays).
+#
+# What Llama Guard 3 1B catches:
+#   O1  Violence and Hate        O5  Regulated / Controlled Substances
+#   O2  Sexual Content           O6  Self-Harm
+#   O3  Criminal Planning        O7  Offensive Language and Insults
+#   O4  Guns and Illegal Weapons
+
+colang_version: "1.0"
+
+models:
+  - type: llama_guard
+    engine: openai
+    parameters:
+      openai_api_base: "http://ollama:11434/v1"   # Ollama OpenAI-compatible endpoint
+      openai_api_key: "ollama"                     # dummy key — Ollama doesn't auth
+      model_name: "llama-guard3:1b"
+      temperature: 0
+
+rails:
+  input:
+    flows:
+      - llama guard check input

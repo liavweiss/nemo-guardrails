@@ -1,0 +1,84 @@
+# Ollama Deployment — serves llama-guard3:1b via OpenAI-compatible API on port 11434.
+#
+# The model is pulled at pod startup (requires outbound internet from the node).
+# First startup: ~5-10 min (~700 MB download). Subsequent starts reuse the emptyDir volume
+# but will re-download on pod restart — replace emptyDir with a PVC for production.
+#
+# Memory: llama-guard3:1b (Q4 quantized) needs ~1.5 GB RAM on CPU.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: nemo-guardrails
+  labels:
+    app: ollama
+    tier: model-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+        tier: model-server
+    spec:
+      containers:
+        - name: ollama
+          image: docker.io/ollama/ollama:latest
+          imagePullPolicy: IfNotPresent
+          # Start server, wait for it, pull the model, then keep the server running.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Start server (binds to all interfaces via OLLAMA_HOST env var)
+              ollama serve &
+              SERVER_PID=$!
+              echo "Waiting for Ollama server to be ready..."
+              # Use 127.0.0.1 explicitly — OLLAMA_HOST=0.0.0.0 is for the server bind
+              # address, not for client connections. Using it for the client causes the
+              # pull to fail silently.
+              until OLLAMA_HOST=http://127.0.0.1:11434 ollama list > /dev/null 2>&1; do
+                sleep 2
+              done
+              echo "Pulling llama-guard3:1b (first run: ~700 MB download)..."
+              OLLAMA_HOST=http://127.0.0.1:11434 ollama pull llama-guard3:1b
+              echo "Model ready. Ollama serving on :11434"
+              wait $SERVER_PID
+          ports:
+            - name: http
+              containerPort: 11434
+          env:
+            - name: OLLAMA_HOST
+              value: "0.0.0.0"
+            - name: OLLAMA_KEEP_ALIVE
+              value: "-1"   # keep model loaded in memory indefinitely
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "3Gi"
+              cpu: "2"
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: 11434
+            # Long initialDelay: model pull can take 5-10 min on first run
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 60   # 60 × 15s = 15 min max wait
+          livenessProbe:
+            httpGet:
+              path: /api/tags
+              port: 11434
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 10
+          volumeMounts:
+            - name: ollama-models
+              mountPath: /root/.ollama
+      volumes:
+        - name: ollama-models
+          emptyDir: {}   # replace with PVC for production to avoid re-downloading on restart

@@ -25,29 +25,34 @@ usage() {
 Usage: setup-k8s-nemo.sh [OPTIONS]
 
 Build and deploy NeMo Guardrails to a Kind cluster (namespace nemo-guardrails).
-Creates the cluster if it does not exist, builds the image, loads it into Kind,
-and applies the deployment and service.
+Creates the cluster if it does not exist, builds the NeMo image, loads it into Kind,
+and applies Kubernetes manifests.
+
+Two deployment tiers are supported automatically:
+
+  Guard-only  (default: guard-only-config, or any guard-only-examples/NN-*)
+              Single pod. No external model service. Uses k8s/ manifests at repo root.
+
+  Model-guard (model-guard-examples/NN-*)
+              Two pods: NeMo guard pod + model server pod (e.g. Ollama).
+              Detected automatically when <config-dir>/k8s/ contains manifests.
+              Also pulls and loads the model server image (e.g. ollama/ollama:latest).
 
 Options:
   --help                    Show this help and exit.
   --docker                  Use Docker for build/load (default: podman).
-  --config-dir <dir>        NeMo config directory to bake into the image
-                            (relative to repo root, default: guard-only-config).
-                            e.g. --config-dir guard-only-examples/01-keywords-patterns
-                            If the config dir has its own Dockerfile, it is used automatically.
-  --rebuild                 Force: rebuild image, load into Kind, and restart the
-                            deployment (rollout restart). Use after config or code changes.
-  --no-cache                Pass --no-cache to build (full rebuild; use if Presidio/
-                            spacy is missing in the running image).
-  --restart-only            Only restart the deployment (rollout restart). No build or load.
-  --load-only               Load current nemoguardrails:latest into Kind and restart deployment
-                            (no build). Use after a manual build with your chosen runtime.
-  --skip-build              Skip build and load (only create cluster if needed and
-                            apply/update K8s manifests). Useful when image is already loaded.
+  --config-dir <dir>        Config directory (relative to repo root, default: guard-only-config).
+                            Guard-only:  guard-only-examples/01-keywords-patterns
+                            Model-guard: model-guard-examples/05-llama-guard
+  --rebuild                 Force rebuild NeMo image, reload into Kind, and restart deployment.
+  --no-cache                Pass --no-cache to build (full rebuild).
+  --restart-only            Only restart the NeMo deployment (no build or load).
+  --load-only               Load current nemoguardrails:latest into Kind and restart (no build).
+  --skip-build              Skip build and load; only apply/update K8s manifests.
 
 Build:
-  Every config directory must be self-contained: own Dockerfile + requirements.txt + config files.
-  The Dockerfile in <config-dir> is always used and <config-dir> is the build context.
+  Every config directory is self-contained: own Dockerfile + requirements.txt + config files.
+  Model-guard examples also have a k8s/ subdirectory with deployment and service manifests.
 
 Environment:
   CLUSTER_NAME       Kind cluster name (default: guardrails).
@@ -55,15 +60,18 @@ Environment:
   SKIP_BUILD         If set (e.g. 1), skip build step (same as --skip-build).
 
 Examples:
+  # Guard-only (default)
   ./scripts/setup-k8s-nemo.sh
-  ./scripts/setup-k8s-nemo.sh --docker              # use Docker instead of Podman
   ./scripts/setup-k8s-nemo.sh --rebuild
-  ./scripts/setup-k8s-nemo.sh --rebuild --no-cache   # full rebuild (e.g. fix missing Presidio)
   ./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/01-keywords-patterns
   ./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/03-jailbreak-heuristics
-  ./scripts/setup-k8s-nemo.sh --load-only           # after manual build: load + restart
+
+  # Model-guard (Llama Guard 3 1B via Ollama — two pods)
+  ./scripts/setup-k8s-nemo.sh --rebuild --config-dir model-guard-examples/05-llama-guard
+
+  ./scripts/setup-k8s-nemo.sh --docker --rebuild     # use Docker instead of Podman
+  ./scripts/setup-k8s-nemo.sh --load-only            # after manual build: load + restart
   ./scripts/setup-k8s-nemo.sh --restart-only
-  ./scripts/setup-k8s-nemo.sh --help
 EOF
 }
 
@@ -121,11 +129,20 @@ fi
 if [[ ! -d "$REPO_ROOT/$CONFIG_DIR" ]]; then
   echo "Config directory not found: $REPO_ROOT/$CONFIG_DIR" >&2
   echo "Available configs:" >&2
+  echo "  guard-only-config  (production default — all guards combined)" >&2
   ls "$REPO_ROOT/guard-only-examples/" 2>/dev/null | sed 's/^/  guard-only-examples\//' >&2
-  echo "  guard-only-config  (production default)" >&2
+  ls "$REPO_ROOT/model-guard-examples/" 2>/dev/null | grep -v README | sed 's/^/  model-guard-examples\//' >&2
   exit 1
 fi
-echo "Config dir: $CONFIG_DIR"
+
+# Detect deployment tier from config dir layout
+CONFIG_K8S_DIR="$REPO_ROOT/$CONFIG_DIR/k8s"
+if [[ -d "$CONFIG_K8S_DIR" ]]; then
+  DEPLOY_TIER="model-guard"
+else
+  DEPLOY_TIER="guard-only"
+fi
+echo "Config dir: $CONFIG_DIR  (tier: $DEPLOY_TIER)"
 
 # Legacy: env SKIP_BUILD still skips build unless --rebuild is set
 if [[ -z "$REBUILD" ]] && [[ -n "${SKIP_BUILD:-}" ]]; then
@@ -197,7 +214,7 @@ else
 fi
 echo ""
 
-# --- Step 2: Build image and load into Kind ---
+# --- Step 2: Build + load NeMo image; load model-server image for model-guard configs ---
 # Use image ID as tag so the deployment uses the exact image we load (avoids "latest" on node pointing to old image).
 DID_LOAD_IMAGE=""
 echo "[2/3] Build and load image (runtime: $CONTAINER_RUNTIME)..."
@@ -208,7 +225,7 @@ if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
     echo "ERROR: No Dockerfile found in $CONFIG_DIR — every config dir must be self-contained." >&2
     exit 1
   fi
-  echo "      Building image from $CONFIG_DIR (self-contained)"
+  echo "      Building NeMo image from $CONFIG_DIR..."
   BUILD_ARGS=(-f "$CONFIG_DIR_ABS/Dockerfile" -t nemoguardrails:latest "$CONFIG_DIR_ABS")
   [[ -n "$DOCKER_NO_CACHE" ]] && BUILD_ARGS=(--no-cache "${BUILD_ARGS[@]}")
   if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
@@ -218,12 +235,12 @@ if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
   fi
   echo "      Build done."
   if kind get kubeconfig --name "$CLUSTER_NAME" &>/dev/null; then
-    echo "      Loading image into cluster..."
+    echo "      Loading NeMo image into cluster..."
     if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
       IMG_ID=$(docker image inspect nemoguardrails:latest --format '{{.Id}}' 2>/dev/null | sed 's/^sha256://' | cut -c1-12)
-  else
-    IMG_ID=$(podman images --format '{{.ID}}' nemoguardrails:latest 2>/dev/null | head -1 | cut -c1-12)
-    [[ -z "$IMG_ID" ]] && IMG_ID=$(podman images --format '{{.ID}}' localhost/nemoguardrails:latest 2>/dev/null | head -1 | cut -c1-12)
+    else
+      IMG_ID=$(podman images --format '{{.ID}}' nemoguardrails:latest 2>/dev/null | head -1 | cut -c1-12)
+      [[ -z "$IMG_ID" ]] && IMG_ID=$(podman images --format '{{.ID}}' localhost/nemoguardrails:latest 2>/dev/null | head -1 | cut -c1-12)
     fi
     if [[ -z "$IMG_ID" ]]; then
       echo "      Failed to get image ID for nemoguardrails:latest" >&2
@@ -243,11 +260,31 @@ if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
     fi
     echo "      Load done ($IMAGE_TAG)."
     DID_LOAD_IMAGE="$IMAGE_TAG"
+
+    # Model-guard: also pull + load the model server image (e.g. ollama/ollama:latest).
+    # Detected by the presence of ollama-deployment.yaml in the config's k8s/ dir.
+    if [[ "$DEPLOY_TIER" == "model-guard" ]] && [[ -f "$CONFIG_K8S_DIR/ollama-deployment.yaml" ]]; then
+      # Use fully-qualified name to avoid Podman trying quay.io/ollama before docker.io/ollama
+      OLLAMA_IMAGE="docker.io/ollama/ollama:latest"
+      echo "      [model-guard] Pulling and loading $OLLAMA_IMAGE into cluster..."
+      echo "      NOTE: The llama-guard3:1b model (~700 MB) is pulled by the Ollama pod at startup."
+      if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
+        docker pull "$OLLAMA_IMAGE" || true
+        kind load docker-image "$OLLAMA_IMAGE" --name "$CLUSTER_NAME"
+      else
+        podman pull "$OLLAMA_IMAGE" || true
+        OLLAMA_TAR=$(mktemp -u).tar
+        podman save -o "$OLLAMA_TAR" "$OLLAMA_IMAGE"
+        kind load image-archive "$OLLAMA_TAR" --name "$CLUSTER_NAME"
+        rm -f "$OLLAMA_TAR"
+      fi
+      echo "      Ollama image loaded."
+    fi
   fi
 else
   echo "      SKIP_BUILD is set. Skipping build and load."
   if kind get kubeconfig --name "$CLUSTER_NAME" &>/dev/null; then
-    echo "      (Image already in cluster from previous run.)"
+    echo "      (Images already in cluster from previous run.)"
   fi
 fi
 echo ""
@@ -256,20 +293,50 @@ echo ""
 echo "[3/3] Deploy to Kubernetes..."
 # --validate=false: skip OpenAPI schema download (Kind clusters often can't serve it)
 kubectl apply --validate=false -f "$K8S_DIR/namespace.yaml"
-kubectl apply --validate=false -f "$K8S_DIR/deployment.yaml" -f "$K8S_DIR/service.yaml"
-# Point deployment at the image we just loaded (by ID tag) so the pod uses it
-if [[ -n "$DID_LOAD_IMAGE" ]]; then
-  echo "      Updating deployment to use $DID_LOAD_IMAGE..."
-  kubectl set image deployment/nemo-guardrails nemo-guardrails="$DID_LOAD_IMAGE" -n nemo-guardrails
-fi
-echo "      Waiting for pod to be ready..."
-if kubectl wait --for=condition=ready pod -l app=nemo-guardrails -n nemo-guardrails --timeout=120s 2>/dev/null; then
-  echo "      Pod is ready."
+
+if [[ "$DEPLOY_TIER" == "model-guard" ]]; then
+  # Model-guard: apply example-specific manifests (NeMo + Ollama pods)
+  echo "      Applying model-guard manifests from $CONFIG_DIR/k8s/ ..."
+  kubectl apply --validate=false -f "$CONFIG_K8S_DIR/"
+  if [[ -n "$DID_LOAD_IMAGE" ]]; then
+    echo "      Updating NeMo deployment to use $DID_LOAD_IMAGE..."
+    kubectl set image deployment/nemo-guardrails nemo-guardrails="$DID_LOAD_IMAGE" -n nemo-guardrails
+  fi
+  echo "      Waiting for NeMo pod..."
+  if kubectl wait --for=condition=ready pod -l app=nemo-guardrails -n nemo-guardrails --timeout=120s 2>/dev/null; then
+    echo "      NeMo pod is ready."
+  else
+    echo "      NeMo wait timed out. Check: kubectl get pods -n nemo-guardrails"
+  fi
+  if [[ -f "$CONFIG_K8S_DIR/ollama-deployment.yaml" ]]; then
+    echo "      Waiting for Ollama pod (first run: model pull can take ~5-10 min)..."
+    echo "      Watch: kubectl logs -f -n nemo-guardrails deploy/ollama"
+    if kubectl rollout status deployment/ollama -n nemo-guardrails --timeout=900s 2>/dev/null; then
+      echo "      Ollama pod is ready."
+    else
+      echo "      Ollama wait timed out. Check: kubectl get pods -n nemo-guardrails"
+    fi
+  fi
+  echo ""
+  echo "=== Done. NeMo Guardrails + Ollama (Llama Guard 3 1B) running in namespace nemo-guardrails."
+  echo "    Port-forward: kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000"
+  echo "    Rebuild:      ./scripts/setup-k8s-nemo.sh --rebuild --config-dir $CONFIG_DIR"
 else
-  echo "      Wait timed out or no matching pod. Check: kubectl get pods -n nemo-guardrails"
+  # Guard-only: apply root k8s/ manifests (single NeMo pod)
+  kubectl apply --validate=false -f "$K8S_DIR/deployment.yaml" -f "$K8S_DIR/service.yaml"
+  if [[ -n "$DID_LOAD_IMAGE" ]]; then
+    echo "      Updating deployment to use $DID_LOAD_IMAGE..."
+    kubectl set image deployment/nemo-guardrails nemo-guardrails="$DID_LOAD_IMAGE" -n nemo-guardrails
+  fi
+  echo "      Waiting for pod to be ready..."
+  if kubectl wait --for=condition=ready pod -l app=nemo-guardrails -n nemo-guardrails --timeout=120s 2>/dev/null; then
+    echo "      Pod is ready."
+  else
+    echo "      Wait timed out or no matching pod. Check: kubectl get pods -n nemo-guardrails"
+  fi
+  echo ""
+  echo "=== Done. NeMo Guardrails (guard-only) running in namespace nemo-guardrails."
+  echo "    Test with: ./scripts/test-rails-mock.sh"
+  echo "    Port-forward: kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000"
+  echo "    Rebuild:      ./scripts/setup-k8s-nemo.sh --rebuild"
 fi
-echo ""
-echo "=== Done. NeMo Guardrails (guards only) is running in namespace nemo-guardrails."
-echo "    Test with: ./scripts/test-rails-mock.sh"
-echo "    Or port-forward and curl: kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000"
-echo "    Rebuild and restart after changes: ./scripts/setup-k8s-nemo.sh --rebuild"

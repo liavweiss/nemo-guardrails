@@ -1,0 +1,48 @@
+# NeMo Guardrails Deployment — lightweight guard proxy that calls Ollama for Llama Guard checks.
+# No models, no GPU, minimal image (~600 MB). Depends on the ollama service (port 11434).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nemo-guardrails
+  namespace: nemo-guardrails
+  labels:
+    app: nemo-guardrails
+    tier: guard-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nemo-guardrails
+  template:
+    metadata:
+      labels:
+        app: nemo-guardrails
+        tier: guard-proxy
+    spec:
+      containers:
+        - name: nemo-guardrails
+          image: nemoguardrails:latest
+          imagePullPolicy: Never   # image is loaded locally via setup-k8s-nemo.sh
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /v1/rails/configs
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /v1/rails/configs
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15

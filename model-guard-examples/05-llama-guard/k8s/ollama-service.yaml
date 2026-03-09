@@ -1,0 +1,16 @@
+# Ollama Service — exposes Ollama within the cluster on port 11434.
+# NeMo config points to: http://ollama:11434/v1 (same namespace: nemo-guardrails)
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: nemo-guardrails
+  labels:
+    app: ollama
+spec:
+  selector:
+    app: ollama
+  ports:
+    - name: http
+      port: 11434
+      targetPort: 11434

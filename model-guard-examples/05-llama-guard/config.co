@@ -1,0 +1,21 @@
+# Colang 1.x — Llama Guard 3 semantic content safety (guard-only, no main LLM).
+#
+# We override the library flow to add an explicit "allowed" branch with stop,
+# so NeMo never falls through to the main LLM dialog pipeline (which we don't have).
+
+define bot refuse to respond
+  "I'm sorry, I can't respond to that. Your message has been flagged as potentially unsafe content."
+
+define bot say "Request allowed."
+  "Request allowed."
+
+define flow llama guard check input
+  $llama_guard_response = execute llama_guard_check_input
+  $allowed = $llama_guard_response["allowed"]
+
+  if not $allowed
+    bot refuse to respond
+    stop
+  else
+    bot say "Request allowed."
+    stop
