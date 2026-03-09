@@ -21,7 +21,7 @@ models:
   - type: llama_guard
     engine: openai
     parameters:
-      openai_api_base: "http://ollama:11434/v1"   # Ollama OpenAI-compatible endpoint
+      openai_api_base: "http://localhost:11434/v1"  # Ollama(same pod, localhost)
       openai_api_key: "ollama"                     # dummy key — Ollama doesn't auth
       model_name: "llama-guard3:1b"
       temperature: 0

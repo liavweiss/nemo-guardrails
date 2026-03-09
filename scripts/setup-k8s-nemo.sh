@@ -261,13 +261,13 @@ if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
     echo "      Load done ($IMAGE_TAG)."
     DID_LOAD_IMAGE="$IMAGE_TAG"
 
-    # Model-guard: also pull + load the model server image (e.g. ollama/ollama:latest).
-    # Detected by the presence of ollama-deployment.yaml in the config's k8s/ dir.
-    if [[ "$DEPLOY_TIER" == "model-guard" ]] && [[ -f "$CONFIG_K8S_DIR/ollama-deployment.yaml" ]]; then
+    # Model-guard: pre-load the Ollama image into Kind so the sidecar container
+    # doesn't need to pull from Docker Hub on the Kind node.
+    if [[ "$DEPLOY_TIER" == "model-guard" ]]; then
       # Use fully-qualified name to avoid Podman trying quay.io/ollama before docker.io/ollama
       OLLAMA_IMAGE="docker.io/ollama/ollama:latest"
       echo "      [model-guard] Pulling and loading $OLLAMA_IMAGE into cluster..."
-      echo "      NOTE: The llama-guard3:1b model (~700 MB) is pulled by the Ollama pod at startup."
+      echo "      NOTE: The llama-guard3:1b model (~700 MB) is pulled by the init container at pod startup."
       if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
         docker pull "$OLLAMA_IMAGE" || true
         kind load docker-image "$OLLAMA_IMAGE" --name "$CLUSTER_NAME"
@@ -302,20 +302,15 @@ if [[ "$DEPLOY_TIER" == "model-guard" ]]; then
     echo "      Updating NeMo deployment to use $DID_LOAD_IMAGE..."
     kubectl set image deployment/nemo-guardrails nemo-guardrails="$DID_LOAD_IMAGE" -n nemo-guardrails
   fi
-  echo "      Waiting for NeMo pod..."
-  if kubectl wait --for=condition=ready pod -l app=nemo-guardrails -n nemo-guardrails --timeout=120s 2>/dev/null; then
+  # Both NeMo and Ollama run as sidecars in the same pod.
+  # The init container pulls the model first (~5-10 min), then both sidecars start.
+  # kubectl wait on the pod covers both containers (pod is only Ready when all containers pass probes).
+  echo "      Waiting for pod (init container pulls model — first run: ~5-10 min)..."
+  echo "      Watch progress: kubectl logs -f -n nemo-guardrails -l app=nemo-guardrails -c model-puller"
+  if kubectl rollout status deployment/nemo-guardrails -n nemo-guardrails --timeout=900s 2>/dev/null; then
     echo "      NeMo pod is ready."
   else
-    echo "      NeMo wait timed out. Check: kubectl get pods -n nemo-guardrails"
-  fi
-  if [[ -f "$CONFIG_K8S_DIR/ollama-deployment.yaml" ]]; then
-    echo "      Waiting for Ollama pod (first run: model pull can take ~5-10 min)..."
-    echo "      Watch: kubectl logs -f -n nemo-guardrails deploy/ollama"
-    if kubectl rollout status deployment/ollama -n nemo-guardrails --timeout=900s 2>/dev/null; then
-      echo "      Ollama pod is ready."
-    else
-      echo "      Ollama wait timed out. Check: kubectl get pods -n nemo-guardrails"
-    fi
+    echo "      Wait timed out. Check: kubectl get pods -n nemo-guardrails"
   fi
   echo ""
   echo "=== Done. NeMo Guardrails + Ollama (Llama Guard 3 1B) running in namespace nemo-guardrails."

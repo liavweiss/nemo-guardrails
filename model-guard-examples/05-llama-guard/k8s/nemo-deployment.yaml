@@ -1,5 +1,18 @@
-# NeMo Guardrails Deployment — lightweight guard proxy that calls Ollama for Llama Guard checks.
-# No models, no GPU, minimal image (~600 MB). Depends on the ollama service (port 11434).
+# NeMo Guardrails + Ollama — single pod, sidecar pattern.
+#
+# Architecture:
+#   initContainer (model-puller): pulls llama-guard3:1b into the shared emptyDir volume, then exits.
+#   container (nemo-guardrails):  lightweight guard proxy, calls Ollama on localhost:11434.
+#   container (ollama):           serves llama-guard3:1b from the pre-pulled volume; no download on start.
+#
+# Benefits vs two-pod design:
+#   - NeMo → Ollama calls go over localhost (no K8s DNS / inter-pod network hop).
+#   - Single pod lifecycle: one readiness gate, one resource unit.
+#   - Model pull is isolated in the init phase — Ollama starts immediately after.
+#
+# Storage: emptyDir is shared between the init container and the Ollama sidecar.
+#   The init container re-pulls the model on every pod restart (~5-10 min, ~700 MB).
+#   Replace emptyDir with a PVC to persist the model across restarts (production).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,10 +32,45 @@ spec:
         app: nemo-guardrails
         tier: guard-proxy
     spec:
+      # ── Init container: pull the model into the shared volume, then exit ──────
+      initContainers:
+        - name: model-puller
+          image: docker.io/ollama/ollama:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              ollama serve &
+              SERVER_PID=$!
+              echo "Waiting for Ollama server to be ready..."
+              until OLLAMA_HOST=http://127.0.0.1:11434 ollama list > /dev/null 2>&1; do
+                sleep 2
+              done
+              echo "Pulling llama-guard3:1b (~700 MB, first run only per node)..."
+              OLLAMA_HOST=http://127.0.0.1:11434 ollama pull llama-guard3:1b
+              echo "Pull complete. Stopping temporary server."
+              kill $SERVER_PID
+              wait $SERVER_PID 2>/dev/null || true
+          env:
+            - name: OLLAMA_HOST
+              value: "0.0.0.0"
+          volumeMounts:
+            - name: ollama-models
+              mountPath: /root/.ollama
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "2Gi"
+              cpu: "2"
+
+      # ── Main containers ───────────────────────────────────────────────────────
       containers:
+        # NeMo guard proxy
         - name: nemo-guardrails
           image: nemoguardrails:latest
-          imagePullPolicy: Never   # image is loaded locally via setup-k8s-nemo.sh
+          imagePullPolicy: Never   # image loaded locally via setup-k8s-nemo.sh
           ports:
             - name: http
               containerPort: 8000
@@ -46,3 +94,46 @@ spec:
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 15
+
+        # Ollama sidecar — model is already on disk from the init container
+        - name: ollama
+          image: docker.io/ollama/ollama:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 11434
+          env:
+            - name: OLLAMA_HOST
+              value: "0.0.0.0"
+            - name: OLLAMA_KEEP_ALIVE
+              value: "-1"   # keep model loaded in memory indefinitely
+          volumeMounts:
+            - name: ollama-models
+              mountPath: /root/.ollama
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "3Gi"
+              cpu: "2"
+          # Model is pre-pulled — Ollama starts in seconds, short probe delays are fine
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: 11434
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/tags
+              port: 11434
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 5
+
+      # ── Shared volume ─────────────────────────────────────────────────────────
+      volumes:
+        - name: ollama-models
+          emptyDir: {}   # replace with a PVC to persist the model across pod restarts
