@@ -1,18 +1,13 @@
-# NeMo Guardrails + Ollama — single pod, sidecar pattern.
+# NeMo Guardrails + Ollama — single pod.
 #
 # Architecture:
 #   initContainer (model-puller): pulls llama-guard3:1b into the shared emptyDir volume, then exits.
 #   container (nemo-guardrails):  lightweight guard proxy, calls Ollama on localhost:11434.
 #   container (ollama):           serves llama-guard3:1b from the pre-pulled volume; no download on start.
 #
-# Benefits vs two-pod design:
-#   - NeMo → Ollama calls go over localhost (no K8s DNS / inter-pod network hop).
-#   - Single pod lifecycle: one readiness gate, one resource unit.
-#   - Model pull is isolated in the init phase — Ollama starts immediately after.
-#
 # Storage: emptyDir is shared between the init container and the Ollama sidecar.
 #   The init container re-pulls the model on every pod restart (~5-10 min, ~700 MB).
-#   Replace emptyDir with a PVC to persist the model across restarts (production).
+#   For production replace emptyDir with a PVC to persist the model across restarts.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,7 +27,6 @@ spec:
         app: nemo-guardrails
         tier: guard-proxy
     spec:
-      # ── Init container: pull the model into the shared volume, then exit ──────
       initContainers:
         - name: model-puller
           image: docker.io/ollama/ollama:latest
@@ -65,7 +59,6 @@ spec:
               memory: "2Gi"
               cpu: "2"
 
-      # ── Main containers ───────────────────────────────────────────────────────
       containers:
         # NeMo guard proxy
         - name: nemo-guardrails
@@ -133,7 +126,6 @@ spec:
             periodSeconds: 30
             failureThreshold: 5
 
-      # ── Shared volume ─────────────────────────────────────────────────────────
       volumes:
         - name: ollama-models
-          emptyDir: {}   # replace with a PVC to persist the model across pod restarts
+          emptyDir: {}   # for production replace with a PVC to persist the model across pod restarts
