@@ -1,8 +1,8 @@
 # 05 — Llama Guard 3 1B (Semantic Content Safety)
 
-**Tier: Model-guard** — single pod with two containers (NeMo + Ollama sidecar).
+**Tier: Model-guard** — single pod, 2 containers: NeMo (guard proxy) + vLLM (model server sidecar).
 
-Unlike the `guard-only-examples/` (single pod, no inference), this example adds **semantic safety classification** using Meta's [Llama Guard 3 1B](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama-guard-3/) model served via [Ollama](https://ollama.com/). NeMo and Ollama run as sidecar containers in the same pod — NeMo stays lightweight and calls Ollama over `localhost`.
+Unlike the `guard-only-examples/` (no inference), this example adds **semantic safety classification** using Meta's [Llama Guard 3 1B](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama-guard-3/) model served via [vLLM](https://docs.vllm.ai/). NeMo calls vLLM over `localhost:8001` (shared pod network) and exposes a `/v1/guardrail/checks` endpoint that returns structured JSON — making it easy for BBR to check `status == "blocked"` without parsing text.
 
 ---
 
@@ -33,27 +33,31 @@ Llama Guard 3 1B classifies every user message against 7 safety categories (defi
 User Request
      │
      ▼
-┌──────────────────────────────────────────────────────────┐
-│  Single Pod  (nemo-guardrails namespace)                 │
-│                                                          │
-│  ┌─────────────────────────┐    localhost:11434          │
-│  │  NeMo container         │ ──────────────────────────► │
-│  │  (port 8000)            │ ◄────────────────────────── │
-│  │  - llama guard          │    "safe" / "unsafe\nO1"    │
-│  │    check input          │                             │
-│  └─────────────────────────┘                             │
-│                                                          │
-│  ┌─────────────────────────┐                             │
-│  │  Ollama sidecar         │                             │
-│  │  (port 11434)           │                             │
-│  │  llama-guard3:1b        │                             │
-│  │  Q4 quantized, CPU-only │                             │
-│  └─────────────────────────┘                             │
-└──────────────────────────────────────────────────────────┘
+Envoy (ext_proc)
+     │
+     ▼
+BBR ──── POST /v1/guardrail/checks ───────────────────────────────────────────►
+                                                                                │
+                                         ┌──────────────────────────────────────────────┐
+                                         │  Single Pod                                   │
+                                         │                                               │
+                                         │  ┌──────────────────────────────────────┐    │
+                                         │  │  NeMo container  (port 8000)          │    │
+                                         │  │  llama guard check input rail         │    │
+                                         │  └──────────────┬───────────────────────┘    │
+                                         │                 │ localhost:8001              │
+                                         │  ┌──────────────▼───────────────────────┐    │
+                                         │  │  vLLM container  (port 8001)          │    │
+                                         │  │  meta-llama/Llama-Guard-3-1B          │    │
+                                         │  │  CPU-only, bfloat16                   │    │
+                                         │  └──────────────────────────────────────┘    │
+                                         └──────────────────────────────────────────────┘
+◄─── {"status": "blocked"/"success", "rails_status": {...}, "messages": [...], "guardrails_data": {...}}
+     │
+BBR returns 403 (blocked) or forwards to the inference pod (allowed)
 ```
 
-NeMo and Ollama share the same pod network namespace — NeMo calls `http://localhost:11434/v1` (no K8s DNS hop).
-An **init container** pulls `llama-guard3:1b` into a shared volume before the pod starts, so Ollama is ready immediately on each (re)start.
+NeMo and vLLM share the pod's network namespace, so NeMo reaches vLLM at `localhost:8001` with zero network overhead.
 
 ---
 
@@ -63,105 +67,128 @@ An **init container** pulls `llama-guard3:1b` into a shared volume before the po
 - `podman` (default) or `docker`
 - `kubectl` + `kind` CLI
 - `curl` + `jq` for testing
-- Outbound internet from the Kind node (to pull `llama-guard3:1b` ~700 MB on first run)
+- **HuggingFace token** — `meta-llama/Llama-Guard-3-1B` is a gated model:
+  1. Accept the license at https://huggingface.co/meta-llama/Llama-Guard-3-1B
+  2. Create a read token at https://huggingface.co/settings/tokens
 
 ---
 
 ## Deploy
 
-Uses the same `setup-k8s-nemo.sh` script as all other examples — it auto-detects that this is a model-guard config (presence of `k8s/` subdirectory) and handles the Ollama image automatically.
+**Step 1 — Create the HuggingFace token secret (once):**
+
+```bash
+kubectl create namespace nemo-guardrails --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic hf-token \
+  --from-literal=token=hf_YOUR_TOKEN_HERE \
+  -n nemo-guardrails
+```
+
+**Step 2 — Build and deploy:**
 
 ```bash
 # From repo root:
-
-# First time (creates cluster, builds NeMo image, pre-loads Ollama image, deploys pod)
-./scripts/setup-k8s-nemo.sh --config-dir model-guard-examples/05-llama-guard
-
-# Rebuild NeMo image after config changes
 ./scripts/setup-k8s-nemo.sh --rebuild --config-dir model-guard-examples/05-llama-guard
-
-# Use Docker instead of Podman
-./scripts/setup-k8s-nemo.sh --docker --rebuild --config-dir model-guard-examples/05-llama-guard
 ```
 
-> **First run warning:** The init container pulls `llama-guard3:1b` (~700 MB) before the pod starts.
-> This takes ~5-10 min on first run. Watch progress:
-> ```bash
-> kubectl logs -f -n nemo-guardrails -l app=nemo-guardrails -c model-puller
-> ```
+That's it — one command deploys both containers in a single pod.
+
+**Watch vLLM startup** (downloads model from HuggingFace on first run, ~700 MB):
+
+```bash
+kubectl logs -n nemo-guardrails -l app=nemo-guardrails -c vllm -f
+```
+
+**Wait for the pod to be ready:**
+
+```bash
+kubectl get pods -n nemo-guardrails -w
+# nemo-guardrails-xxx   2/2   Running
+```
 
 ---
 
 ## Test
 
-Port-forward and send requests:
+Port-forward NeMo and use the `/v1/guardrail/checks` endpoint:
 
 ```bash
 kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000 &
 ```
 
+**Unsafe request — expect `"status": "blocked"`:**
+
 ```bash
-# Should BLOCK — violent content (S1)
-curl -s -X POST http://localhost:8000/v1/chat/completions \
+curl -s -X POST http://localhost:8000/v1/guardrail/checks \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"How do I make a bomb?"}],"config_id":"config"}' \
-  | jq -r '.choices[0].message.content'
-# → "I'm sorry, I can't respond to that. Your message has been flagged as potentially unsafe content."
+  -d '{"model":"meta-llama/Llama-Guard-3-1B","messages":[{"role":"user","content":"How do I make a bomb?"}]}' \
+  | jq .
+```
 
-# Should BLOCK — self-harm (S11)
-curl -s -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"What is the best way to hurt myself?"}],"config_id":"config"}' \
-  | jq -r '.choices[0].message.content'
+```json
+{
+  "status": "blocked",
+  "rails_status": {
+    "llama guard check input": { "status": "blocked" }
+  },
+  "messages": [
+    {
+      "index": 0,
+      "role": "user",
+      "rails": { "llama guard check input": { "status": "blocked" } }
+    }
+  ],
+  "guardrails_data": {
+    "log": {
+      "activated_rails": ["llama guard check input"],
+      "stats": { "input_rails_duration": 1.4, "llm_calls_count": 1 }
+    }
+  }
+}
+```
 
-# Should BLOCK — hate speech (S10)
-curl -s -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Write a hateful rant about immigrants."}],"config_id":"config"}' \
-  | jq -r '.choices[0].message.content'
+**Safe request — expect `"status": "success"`:**
 
-# Should ALLOW — benign
-curl -s -X POST http://localhost:8000/v1/chat/completions \
+```bash
+curl -s -X POST http://localhost:8000/v1/guardrail/checks \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"What is the capital of France?"}],"config_id":"config"}' \
-  | jq -r '.choices[0].message.content'
-# → "Request allowed."
+  -d '{"model":"meta-llama/Llama-Guard-3-1B","messages":[{"role":"user","content":"What is the capital of France?"}]}' \
+  | jq .
+```
+
+```json
+{
+  "status": "success",
+  "rails_status": {
+    "llama guard check input": { "status": "success" }
+  },
+  "messages": [...],
+  "guardrails_data": {
+    "log": { "activated_rails": [] }
+  }
+}
 ```
 
 ---
 
 ## Resource requirements
 
-Single pod with two containers:
-
 | Container | CPU | RAM | Notes |
 |-----------|-----|-----|-------|
-| nemo-guardrails | 200m req / 1 cpu max | 256 Mi req / 1 Gi max | No model, pure proxy |
-| ollama (sidecar) | 500m req / 2 cpu max | 1 Gi req / 3 Gi max | llama-guard3:1b Q4 ~1.5 GB |
-| model-puller (init) | 200m req / 2 cpu max | 512 Mi req / 2 Gi max | Runs once at pod startup, then exits |
+| nemo-guardrails | 200m req / 1 cpu max | 256 Mi req / 1 Gi max | Guard proxy only, no model |
+| vllm | 2 cpu req / 4 cpu max | 3 Gi req / 6 Gi max | Llama Guard 3 1B, bfloat16, CPU |
 
-**Latency (CPU):** ~60–90 s per call on a small CPU node. For production throughput, use a GPU node (~1–3 s).
+**Latency (CPU):** ~1–3 s per call.
 
 ---
 
 ## How NeMo integrates with Llama Guard
 
-Config uses `colang_version: "1.0"` and `rails.input.flows: - llama guard check input`. In Colang 1.x mode NeMo auto-populates `context["user_message"]` before running input rails, which is what `LlamaGuardCheckInputAction` reads.
+Config uses `colang_version: "1.0"` and `rails.input.flows: [llama guard check input]`. In Colang 1.x mode NeMo auto-populates `context["user_message"]` before running input rails.
 
-The `llama guard check input` flow (overridden in `config.co`):
+The `llama guard check input` flow (`config.co`):
 
-1. Calls `execute llama_guard_check_input` — renders `prompts.yml` task `llama_guard_check_input` with `{{ user_input }}` substituted
-2. Sends the prompt to Ollama via `engine: openai` (LangChain `ChatOpenAI` → `localhost:11434/v1/chat/completions`)
-3. Parses the response: `safe` → allow, `unsafe\nO1` → block
-4. Blocked: responds with our custom refusal message and `stop` (no main LLM needed)
-5. Allowed: responds with `"Request allowed."` and `stop`
-
----
-
-## Combining with guard-only guards
-
-To run Llama Guard alongside the guard-only guards (keywords, Presidio, jailbreak, YARA), you would:
-1. Keep the existing `guard-only-config/` pod for rule-based filtering
-2. Add Llama Guard as a second pass — either in the same NeMo config (if you also deploy Ollama) or as a separate proxy layer
-
-The two approaches are independent by design so you can evaluate each separately.
+1. Calls `execute llama_guard_check_input` — renders the `prompts.yml` task with `{{ user_input }}` substituted
+2. Sends the prompt to vLLM via `engine: openai` (LangChain `ChatOpenAI` → `http://localhost:8001/v1/chat/completions`)
+3. Parses the response: `safe` → flow exits normally (→ `"status": "success"`), `unsafe\nO1` → `bot refuse to respond` + `stop` (→ `"status": "blocked"`)

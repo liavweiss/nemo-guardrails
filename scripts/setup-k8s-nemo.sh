@@ -34,9 +34,9 @@ Two deployment tiers are supported automatically:
               Single pod. No external model service. Uses k8s/ manifests at repo root.
 
   Model-guard (model-guard-examples/NN-*)
-              Two pods: NeMo guard pod + model server pod (e.g. Ollama).
+              Single pod, 2 containers: NeMo guard + vLLM sidecar.
               Detected automatically when <config-dir>/k8s/ contains manifests.
-              Also pulls and loads the model server image (e.g. ollama/ollama:latest).
+              Also pulls and loads the vLLM image into Kind.
 
 Options:
   --help                    Show this help and exit.
@@ -66,7 +66,7 @@ Examples:
   ./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/01-keywords-patterns
   ./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/03-jailbreak-heuristics
 
-  # Model-guard (Llama Guard 3 1B via Ollama — two pods)
+  # Model-guard (Llama Guard 3 1B via vLLM sidecar — single pod, 2 containers)
   ./scripts/setup-k8s-nemo.sh --rebuild --config-dir model-guard-examples/05-llama-guard
 
   ./scripts/setup-k8s-nemo.sh --docker --rebuild     # use Docker instead of Podman
@@ -261,24 +261,23 @@ if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
     echo "      Load done ($IMAGE_TAG)."
     DID_LOAD_IMAGE="$IMAGE_TAG"
 
-    # Model-guard: pre-load the Ollama image into Kind so the sidecar container
-    # doesn't need to pull from Docker Hub on the Kind node.
+    # Model-guard: pre-load the vLLM image into Kind so the sidecar container
+    # doesn't need to pull from ECR on the Kind node.
     if [[ "$DEPLOY_TIER" == "model-guard" ]]; then
-      # Use fully-qualified name to avoid Podman trying quay.io/ollama before docker.io/ollama
-      OLLAMA_IMAGE="docker.io/ollama/ollama:latest"
-      echo "      [model-guard] Pulling and loading $OLLAMA_IMAGE into cluster..."
-      echo "      NOTE: The llama-guard3:1b model (~700 MB) is pulled by the init container at pod startup."
+      VLLM_IMAGE="public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.17.1"
+      echo "      [model-guard] Pulling and loading $VLLM_IMAGE into cluster..."
+      echo "      NOTE: The Llama Guard 3 1B model (~700 MB) is downloaded from HuggingFace at container startup."
       if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
-        docker pull "$OLLAMA_IMAGE" || true
-        kind load docker-image "$OLLAMA_IMAGE" --name "$CLUSTER_NAME"
+        docker pull "$VLLM_IMAGE" || true
+        kind load docker-image "$VLLM_IMAGE" --name "$CLUSTER_NAME"
       else
-        podman pull "$OLLAMA_IMAGE" || true
-        OLLAMA_TAR=$(mktemp -u).tar
-        podman save -o "$OLLAMA_TAR" "$OLLAMA_IMAGE"
-        kind load image-archive "$OLLAMA_TAR" --name "$CLUSTER_NAME"
-        rm -f "$OLLAMA_TAR"
+        podman pull "$VLLM_IMAGE" || true
+        VLLM_TAR=$(mktemp -u).tar
+        podman save -o "$VLLM_TAR" "$VLLM_IMAGE"
+        kind load image-archive "$VLLM_TAR" --name "$CLUSTER_NAME"
+        rm -f "$VLLM_TAR"
       fi
-      echo "      Ollama image loaded."
+      echo "      vLLM image loaded."
     fi
   fi
 else
@@ -302,18 +301,18 @@ if [[ "$DEPLOY_TIER" == "model-guard" ]]; then
     echo "      Updating NeMo deployment to use $DID_LOAD_IMAGE..."
     kubectl set image deployment/nemo-guardrails nemo-guardrails="$DID_LOAD_IMAGE" -n nemo-guardrails
   fi
-  # Both NeMo and Ollama run as sidecars in the same pod.
-  # The init container pulls the model first (~5-10 min), then both sidecars start.
+  # NeMo and vLLM run as sidecars in the same pod.
   # kubectl wait on the pod covers both containers (pod is only Ready when all containers pass probes).
-  echo "      Waiting for pod (init container pulls model — first run: ~5-10 min)..."
-  echo "      Watch progress: kubectl logs -f -n nemo-guardrails -l app=nemo-guardrails -c model-puller"
+  # vLLM downloads Llama Guard 3 1B from HuggingFace on first startup (~5-10 min).
+  echo "      Waiting for pod (vLLM downloads model from HuggingFace on first run: ~5-10 min)..."
+  echo "      Watch progress: kubectl logs -f -n nemo-guardrails -l app=nemo-guardrails -c vllm"
   if kubectl rollout status deployment/nemo-guardrails -n nemo-guardrails --timeout=900s 2>/dev/null; then
     echo "      NeMo pod is ready."
   else
     echo "      Wait timed out. Check: kubectl get pods -n nemo-guardrails"
   fi
   echo ""
-  echo "=== Done. NeMo Guardrails + Ollama (Llama Guard 3 1B) running in namespace nemo-guardrails."
+  echo "=== Done. NeMo Guardrails + vLLM (Llama Guard 3 1B) running in namespace nemo-guardrails."
   echo "    Port-forward: kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000"
   echo "    Rebuild:      ./scripts/setup-k8s-nemo.sh --rebuild --config-dir $CONFIG_DIR"
 else

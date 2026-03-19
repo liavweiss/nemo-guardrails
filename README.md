@@ -28,7 +28,7 @@ Main LLM Pod (vLLM / TGI / etc.)
 Response → back through BBR → (output guard) → User
 ```
 
-The NeMo pod exposes `/v1/chat/completions` (same API shape as OpenAI). BBR sends the request body to NeMo; if NeMo detects a violation it returns a block message, BBR converts that to a `403 Forbidden` to the user. If allowed, BBR forwards to the real LLM.
+The NeMo pod exposes `/v1/guardrail/checks`, which returns structured JSON (`"status": "blocked"/"success"`, `rails_status`, `guardrails_data`). BBR checks `status == "blocked"` and returns a `403 Forbidden` to the user. If allowed, BBR forwards to the real LLM.
 
 ---
 
@@ -66,15 +66,15 @@ nemo-guardrails/
 │   ├── 03-jailbreak-heuristics/  # jailbreak heuristics only (~4 GB image, gpt2-large)
 │   └── 04-injection-detection/   # YARA code/SQLi/template/XSS detection (~600 MB image)
 │
-├── model-guard-examples/         # guards that include a model sidecar (single pod: NeMo + Ollama)
-│   └── 05-llama-guard/           # semantic content safety via Llama Guard 3 1B (Ollama sidecar, CPU)
+├── model-guard-examples/         # guards that include a model for semantic classification
+│   └── 05-llama-guard/           # Llama Guard 3 1B via vLLM (single pod, 2 containers)
 │       ├── Dockerfile
 │       ├── requirements.txt
 │       ├── config.yml
 │       ├── config.co
 │       ├── prompts.yml
 │       └── k8s/
-│           ├── nemo-deployment.yaml  # single pod: NeMo + Ollama sidecar + init container (model pull)
+│           ├── nemo-deployment.yaml  # single pod: NeMo (port 8000) + vLLM sidecar (port 8001, HF token required)
 │           └── nemo-service.yaml
 │
 ├── k8s/                          # shared Kubernetes manifests (namespace, default deployment/service)
@@ -133,10 +133,16 @@ nemo-guardrails/
 ./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/04-injection-detection
 ```
 
-**Deploy a model-guard example** (single pod: NeMo + Ollama sidecar — see `model-guard-examples/`):
+**Deploy the model-guard example** (single pod, NeMo + vLLM sidecar):
 
 ```bash
-# Llama Guard semantic safety — see model-guard-examples/05-llama-guard/README.md
+# Requires a HuggingFace token — see model-guard-examples/05-llama-guard/README.md
+
+# Step 1: create the HF token secret
+kubectl create namespace nemo-guardrails --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic hf-token --from-literal=token=hf_YOUR_TOKEN_HERE -n nemo-guardrails
+
+# Step 2: build and deploy (single command — both containers in one pod)
 ./scripts/setup-k8s-nemo.sh --rebuild --config-dir model-guard-examples/05-llama-guard
 ```
 
