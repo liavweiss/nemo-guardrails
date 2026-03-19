@@ -88,8 +88,11 @@ kubectl create secret generic hf-token \
 **Step 2 — Build and deploy:**
 
 ```bash
-# From repo root:
+# From repo root — deploys to the default 'guardrails' cluster:
 ./scripts/setup-k8s-nemo.sh --rebuild --config-dir model-guard-examples/05-llama-guard
+
+# To deploy to a different cluster (e.g. bbr-test):
+./scripts/setup-k8s-nemo.sh --cluster bbr-test --rebuild --config-dir model-guard-examples/05-llama-guard
 ```
 
 That's it — one command deploys both containers in a single pod.

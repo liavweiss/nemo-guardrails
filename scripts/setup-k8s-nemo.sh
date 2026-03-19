@@ -3,7 +3,7 @@
 # Use --rebuild to force rebuild image, load into Kind, and restart the deployment.
 set -e
 
-CLUSTER_NAME="${CLUSTER_NAME:-guardrails}"
+CLUSTER_NAME="${CLUSTER_NAME:-guardrails}"   # override with --cluster or CLUSTER_NAME env
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 K8S_DIR="$REPO_ROOT/k8s"
@@ -40,6 +40,7 @@ Two deployment tiers are supported automatically:
 
 Options:
   --help                    Show this help and exit.
+  --cluster <name>          Kind cluster name to deploy to (default: guardrails).
   --docker                  Use Docker for build/load (default: podman).
   --config-dir <dir>        Config directory (relative to repo root, default: guard-only-config).
                             Guard-only:  guard-only-examples/01-keywords-patterns
@@ -55,7 +56,7 @@ Build:
   Model-guard examples also have a k8s/ subdirectory with deployment and service manifests.
 
 Environment:
-  CLUSTER_NAME       Kind cluster name (default: guardrails).
+  CLUSTER_NAME       Kind cluster name (default: guardrails). Overridden by --cluster.
   CONTAINER_RUNTIME  podman (default) or docker.
   SKIP_BUILD         If set (e.g. 1), skip build step (same as --skip-build).
 
@@ -69,6 +70,9 @@ Examples:
   # Model-guard (Llama Guard 3 1B via vLLM sidecar — single pod, 2 containers)
   ./scripts/setup-k8s-nemo.sh --rebuild --config-dir model-guard-examples/05-llama-guard
 
+  # Deploy to a specific cluster (e.g. bbr-test instead of the default guardrails cluster)
+  ./scripts/setup-k8s-nemo.sh --cluster bbr-test --rebuild --config-dir model-guard-examples/05-llama-guard
+
   ./scripts/setup-k8s-nemo.sh --docker --rebuild     # use Docker instead of Podman
   ./scripts/setup-k8s-nemo.sh --load-only            # after manual build: load + restart
   ./scripts/setup-k8s-nemo.sh --restart-only
@@ -81,6 +85,10 @@ parse_args() {
       --help|-h)
         usage
         exit 0
+        ;;
+      --cluster)
+        CLUSTER_NAME="$2"
+        shift 2
         ;;
       --docker)
         CONTAINER_RUNTIME=docker

@@ -113,6 +113,9 @@ nemo-guardrails/
 # After code/config changes: rebuild image and redeploy
 ./scripts/setup-k8s-nemo.sh --rebuild
 
+# Deploy to a specific cluster (default is 'guardrails')
+./scripts/setup-k8s-nemo.sh --cluster bbr-test --rebuild
+
 # Use Docker instead of Podman
 ./scripts/setup-k8s-nemo.sh --docker --rebuild
 ```
@@ -144,6 +147,9 @@ kubectl create secret generic hf-token --from-literal=token=hf_YOUR_TOKEN_HERE -
 
 # Step 2: build and deploy (single command — both containers in one pod)
 ./scripts/setup-k8s-nemo.sh --rebuild --config-dir model-guard-examples/05-llama-guard
+
+# To deploy to a specific cluster (e.g. bbr-test instead of the default guardrails):
+./scripts/setup-k8s-nemo.sh --cluster bbr-test --rebuild --config-dir model-guard-examples/05-llama-guard
 ```
 
 The script auto-detects the `Dockerfile` inside the example directory and uses it as the build context.
