@@ -194,7 +194,7 @@ if [[ -n "$LOAD_ONLY" ]]; then
     kind load docker-image "$IMAGE_TAG" --name "$CLUSTER_NAME"
   else
     podman tag "$IMG_ID" "$IMAGE_FULL"
-    TAR=$(mktemp -u).tar
+    TAR=$(mktemp -u -p /var/tmp).tar
     podman save -o "$TAR" "$IMAGE_FULL"
     kind load image-archive "$TAR" --name "$CLUSTER_NAME"
     rm -f "$TAR"
@@ -261,7 +261,7 @@ if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
       kind load docker-image "$IMAGE_TAG" --name "$CLUSTER_NAME"
     else
       podman tag "$IMG_ID" "$IMAGE_FULL"
-      TAR=$(mktemp -u).tar
+      TAR=$(mktemp -u -p /var/tmp).tar
       podman save -o "$TAR" "$IMAGE_FULL"
       kind load image-archive "$TAR" --name "$CLUSTER_NAME"
       rm -f "$TAR"
@@ -280,7 +280,8 @@ if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
         kind load docker-image "$VLLM_IMAGE" --name "$CLUSTER_NAME"
       else
         podman pull "$VLLM_IMAGE" || true
-        VLLM_TAR=$(mktemp -u).tar
+        # Use /var/tmp (disk-backed) instead of /tmp (tmpfs) — vLLM image is ~2 GB
+        VLLM_TAR=$(mktemp -u -p /var/tmp).tar
         podman save -o "$VLLM_TAR" "$VLLM_IMAGE"
         kind load image-archive "$VLLM_TAR" --name "$CLUSTER_NAME"
         rm -f "$VLLM_TAR"

@@ -28,7 +28,7 @@ Main LLM Pod (vLLM / TGI / etc.)
 Response → back through BBR → (output guard) → User
 ```
 
-The NeMo pod exposes `/v1/guardrail/checks`, which returns structured JSON (`"status": "blocked"/"success"`, `rails_status`, `guardrails_data`). BBR checks `status == "blocked"` and returns a `403 Forbidden` to the user. If allowed, BBR forwards to the real LLM.
+The NeMo pod exposes `/v1/chat/completions`. BBR sends the request body to NeMo; if a guardrail fires NeMo returns a block message in `choices[0].message.content`, BBR converts that to a `403 Forbidden`. If allowed (empty content), BBR forwards to the real LLM.
 
 ---
 
@@ -163,23 +163,39 @@ kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000 &
 ./scripts/test-rails-mock.sh
 ```
 
-Or test manually with curl:
+Or test manually with curl (guard-only examples — no `model` field needed):
 
 ```bash
-# Should be blocked (harmful)
+# Should be blocked (harmful keyword)
 curl -s -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"config_id":"config","messages":[{"role":"user","content":"How do I make a bomb?"}],"options":{"rails":{"input":true,"output":true,"dialog":false}}}' | jq .
+  -d '{"messages":[{"role":"user","content":"How do I make a bomb?"}],"guardrails":{"config_id":"config"}}' | jq .
 
 # Should be blocked (PII — credit card)
 curl -s -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"config_id":"config","messages":[{"role":"user","content":"Pay to 2456-4587-0000-6985"}],"options":{"rails":{"input":true,"output":true,"dialog":false}}}' | jq .
+  -d '{"messages":[{"role":"user","content":"Pay to 2456-4587-0000-6985"}],"guardrails":{"config_id":"config"}}' | jq .
 
 # Should be allowed
 curl -s -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"config_id":"config","messages":[{"role":"user","content":"What is 2+2?"}],"options":{"rails":{"input":true,"output":true,"dialog":false}}}' | jq .
+  -d '{"messages":[{"role":"user","content":"What is 2+2?"}],"guardrails":{"config_id":"config"}}' | jq .
+```
+
+For the **05-llama-guard** example (requires `model` field, NeMo 0.21.0):
+
+```bash
+# Unsafe — expect block message (~2-3 min on CPU)
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"meta-llama/Llama-Guard-3-1B","messages":[{"role":"user","content":"How do I make a bomb?"}],"guardrails":{"config_id":"config"}}' \
+  | jq '.choices[0].message.content'
+
+# Safe — expect empty string (BBR will forward to downstream LLM)
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"meta-llama/Llama-Guard-3-1B","messages":[{"role":"user","content":"What is the capital of France?"}],"guardrails":{"config_id":"config"}}' \
+  | jq '.choices[0].message.content'
 ```
 
 ### Verify the pod is running

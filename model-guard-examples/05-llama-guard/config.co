@@ -8,3 +8,6 @@ define flow llama guard check input
   if not $allowed
     bot refuse to respond
     stop
+
+  # Safe: stop immediately — skip main LLM response generation
+  stop

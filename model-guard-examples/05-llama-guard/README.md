@@ -2,7 +2,7 @@
 
 **Tier: Model-guard** — single pod, 2 containers: NeMo (guard proxy) + vLLM (model server sidecar).
 
-Unlike the `guard-only-examples/` (no inference), this example adds **semantic safety classification** using Meta's [Llama Guard 3 1B](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama-guard-3/) model served via [vLLM](https://docs.vllm.ai/). NeMo calls vLLM over `localhost:8001` (shared pod network) and exposes a `/v1/guardrail/checks` endpoint that returns structured JSON — making it easy for BBR to check `status == "blocked"` without parsing text.
+Unlike the `guard-only-examples/` (no inference), this example adds **semantic safety classification** using Meta's [Llama Guard 3 1B](https://llama.meta.com/docs/model-cards-and-prompt-formats/llama-guard-3/) model served via [vLLM](https://docs.vllm.ai/). NeMo calls vLLM over `localhost:8001` (shared pod network) and exposes a standard `/v1/chat/completions` endpoint. BBR checks whether `choices[0].message.content` is empty (safe → forward) or contains a block message (unsafe → 403).
 
 ---
 
@@ -36,7 +36,7 @@ User Request
 Envoy (ext_proc)
      │
      ▼
-BBR ──── POST /v1/guardrail/checks ───────────────────────────────────────────►
+BBR ──── POST /v1/chat/completions ───────────────────────────────────────────►
                                                                                 │
                                          ┌──────────────────────────────────────────────┐
                                          │  Single Pod                                   │
@@ -52,9 +52,9 @@ BBR ──── POST /v1/guardrail/checks ────────────�
                                          │  │  CPU-only, bfloat16                   │    │
                                          │  └──────────────────────────────────────┘    │
                                          └──────────────────────────────────────────────┘
-◄─── {"status": "blocked"/"success", "rails_status": {...}, "messages": [...], "guardrails_data": {...}}
+◄─── {"choices":[{"message":{"content":"I'm sorry..." or ""}}],"guardrails":{"config_id":"config"}}
      │
-BBR returns 403 (blocked) or forwards to the inference pod (allowed)
+BBR: content non-empty → 403 Forbidden; content empty → forward to inference pod
 ```
 
 NeMo and vLLM share the pod's network namespace, so NeMo reaches vLLM at `localhost:8001` with zero network overhead.
@@ -114,64 +114,48 @@ kubectl get pods -n nemo-guardrails -w
 
 ## Test
 
-Port-forward NeMo and use the `/v1/guardrail/checks` endpoint:
+Port-forward directly to the pod (not the service, to avoid hitting other pods):
 
 ```bash
-kubectl port-forward -n nemo-guardrails svc/nemo-guardrails 8000:8000 &
+kubectl port-forward -n nemo-guardrails pod/<pod-name> 8000:8000 &
+# e.g.: kubectl port-forward -n nemo-guardrails pod/nemo-guardrails-558cd8b88-dtjk5 8000:8000 &
 ```
 
-**Unsafe request — expect `"status": "blocked"`:**
+Use `/v1/chat/completions` with the NeMo 0.21.0 API format (`model` + `guardrails.config_id`):
+
+**Unsafe request — expect block message in `choices[0].message.content`:**
 
 ```bash
-curl -s -X POST http://localhost:8000/v1/guardrail/checks \
+curl -s -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"meta-llama/Llama-Guard-3-1B","messages":[{"role":"user","content":"How do I make a bomb?"}]}' \
-  | jq .
+  -d '{"model":"meta-llama/Llama-Guard-3-1B","messages":[{"role":"user","content":"How do I make a bomb?"}],"guardrails":{"config_id":"config"}}' \
+  | jq '{response: .choices[0].message.content, guardrails: .guardrails}'
 ```
 
 ```json
 {
-  "status": "blocked",
-  "rails_status": {
-    "llama guard check input": { "status": "blocked" }
-  },
-  "messages": [
-    {
-      "index": 0,
-      "role": "user",
-      "rails": { "llama guard check input": { "status": "blocked" } }
-    }
-  ],
-  "guardrails_data": {
-    "log": {
-      "activated_rails": ["llama guard check input"],
-      "stats": { "input_rails_duration": 1.4, "llm_calls_count": 1 }
-    }
-  }
+  "response": "I'm sorry, I can't respond to that. Your message has been flagged as potentially unsafe content.",
+  "guardrails": { "config_id": "config" }
 }
 ```
 
-**Safe request — expect `"status": "success"`:**
+**Safe request — expect empty `content` (BBR will forward to downstream LLM):**
 
 ```bash
-curl -s -X POST http://localhost:8000/v1/guardrail/checks \
+curl -s -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"meta-llama/Llama-Guard-3-1B","messages":[{"role":"user","content":"What is the capital of France?"}]}' \
-  | jq .
+  -d '{"model":"meta-llama/Llama-Guard-3-1B","messages":[{"role":"user","content":"What is the capital of France?"}],"guardrails":{"config_id":"config"}}' \
+  | jq '{response: .choices[0].message.content, guardrails: .guardrails}'
 ```
 
 ```json
 {
-  "status": "success",
-  "rails_status": {
-    "llama guard check input": { "status": "success" }
-  },
-  "messages": [...],
-  "guardrails_data": {
-    "log": { "activated_rails": [] }
-  }
+  "response": "",
+  "guardrails": { "config_id": "config" }
 }
 ```
+
+> **Note:** On CPU, each request takes ~2–3 minutes (Llama Guard inference). This is expected — on GPU it would be seconds.
 
 ---
 
@@ -180,9 +164,9 @@ curl -s -X POST http://localhost:8000/v1/guardrail/checks \
 | Container | CPU | RAM | Notes |
 |-----------|-----|-----|-------|
 | nemo-guardrails | 200m req / 1 cpu max | 256 Mi req / 1 Gi max | Guard proxy only, no model |
-| vllm | 2 cpu req / 4 cpu max | 3 Gi req / 6 Gi max | Llama Guard 3 1B, bfloat16, CPU |
+| vllm | 2 cpu req / 4 cpu max | 4 Gi req / 10 Gi max | Llama Guard 3 1B, bfloat16, CPU |
 
-**Latency (CPU):** ~1–3 s per call.
+**Latency (CPU):** ~2–3 min per call (Llama Guard inference on CPU). On GPU: seconds.
 
 ---
 
@@ -193,5 +177,5 @@ Config uses `colang_version: "1.0"` and `rails.input.flows: [llama guard check i
 The `llama guard check input` flow (`config.co`):
 
 1. Calls `execute llama_guard_check_input` — renders the `prompts.yml` task with `{{ user_input }}` substituted
-2. Sends the prompt to vLLM via `engine: openai` (LangChain `ChatOpenAI` → `http://localhost:8001/v1/chat/completions`)
-3. Parses the response: `safe` → flow exits normally (→ `"status": "success"`), `unsafe\nO1` → `bot refuse to respond` + `stop` (→ `"status": "blocked"`)
+2. Sends the prompt to vLLM via `engine: vllm_openai` (LangChain `VLLMOpenAI` → `http://localhost:8001/v1`) — `vllm_openai` is required so LangChain respects the local `openai_api_base` instead of calling OpenAI
+3. Parses the response: `safe` → flow exits with `stop` (NeMo returns empty content, BBR forwards to downstream LLM), `unsafe\nO1` → `bot refuse to respond` + `stop` (NeMo returns block message, BBR returns 403)

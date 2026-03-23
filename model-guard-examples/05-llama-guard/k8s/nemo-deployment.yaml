@@ -21,6 +21,13 @@ spec:
         - name: nemo-guardrails
           image: nemoguardrails:latest
           imagePullPolicy: Never
+          env:
+            - name: OPENAI_API_KEY
+              value: "dummy"
+            - name: MAIN_MODEL_ENGINE
+              value: "vllm_openai"
+            - name: MAIN_MODEL_BASE_URL
+              value: "http://localhost:8001/v1"
           ports:
             - name: http
               containerPort: 8000
@@ -57,22 +64,27 @@ spec:
             - "--dtype"
             - "bfloat16"
             - "--max-model-len"
-            - "4096"
+            - "2048"
+            - "--max-num-seqs"
+            - "4"
+            - "--enforce-eager"
           env:
             - name: HF_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: hf-token
                   key: token
+            - name: VLLM_CPU_KVCACHE_SPACE
+              value: "2"
           ports:
             - name: vllm-http
               containerPort: 8001
           resources:
             requests:
-              memory: "3Gi"
+              memory: "4Gi"
               cpu: "2"
             limits:
-              memory: "6Gi"
+              memory: "10Gi"
               cpu: "4"
           readinessProbe:
             httpGet:

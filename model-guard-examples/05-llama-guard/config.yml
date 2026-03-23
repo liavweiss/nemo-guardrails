@@ -8,7 +8,7 @@ colang_version: "1.0"
 
 models:
   - type: llama_guard
-    engine: openai
+    engine: vllm_openai
     parameters:
       openai_api_base: "http://localhost:8001/v1"
       openai_api_key: "dummy"
