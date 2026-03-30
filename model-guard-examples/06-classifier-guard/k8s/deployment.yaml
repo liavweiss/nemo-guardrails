@@ -1,0 +1,48 @@
+# classifier-guard: NeMo Guardrails + L0 Bouncer (22M DeBERTa) — single container, no vLLM sidecar.
+# CPU-only, ~1.5 Gi RAM (torch-cpu + transformers + nemoguardrails + model).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nemo-guardrails
+  namespace: nemo-guardrails
+  labels:
+    app: nemo-guardrails
+    tier: classifier-guard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nemo-guardrails
+  template:
+    metadata:
+      labels:
+        app: nemo-guardrails
+        tier: classifier-guard
+    spec:
+      containers:
+        - name: nemo-guardrails
+          image: nemoguardrails:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "2Gi"
+              cpu: "2"
+          readinessProbe:
+            httpGet:
+              path: /v1/rails/configs
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /v1/rails/configs
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15

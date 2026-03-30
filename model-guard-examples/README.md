@@ -9,8 +9,9 @@ The NeMo pod itself still contains **no main application LLM** — it only calls
 For guards that need **no external model at all**, see [`../guard-only-examples/`](../guard-only-examples/).  
 For the **production config** (all guard-only guards combined), see [`../guard-only-config/`](../guard-only-config/).
 
-| Example | Capability | Architecture | Model size | Categories |
-|---------|-----------|--------------|------------|------------|
-| [`05-llama-guard/`](05-llama-guard/) | Semantic content safety (safe/unsafe + 13 categories) | NeMo pod + Ollama pod | Llama Guard 3 1B (~700 MB, CPU) | S1–S13: violence, hate, CSAM, CBRN, self-harm, elections, … |
+| Example | Capability | Architecture | Model size | Latency (CPU) | Categories |
+|---------|-----------|--------------|------------|---------------|------------|
+| [`05-llama-guard/`](05-llama-guard/) | Semantic content safety (safe/unsafe + 13 categories) | Single pod, 2 containers (NeMo + vLLM) | Llama Guard 3 1B (~700 MB) | ~2-3 min | S1–S13: violence, hate, CSAM, CBRN, self-harm, elections, … |
+| [`06-classifier-guard/`](06-classifier-guard/) | Binary content safety (safe/unsafe) | Single pod, 1 container (NeMo + in-process classifier) | L0 Bouncer DeBERTa-v3-xsmall (22M params) | ~5-10ms | Binary safe/unsafe (93% F1, 99% Recall) |
 
 See [`../docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md`](../docs/NEMO_GUARD_OPTIONS_NO_INFERENCE.md) for the full options map.

@@ -28,7 +28,7 @@ Main LLM Pod (vLLM / TGI / etc.)
 Response → back through BBR → (output guard) → User
 ```
 
-The NeMo pod exposes `/v1/chat/completions`. BBR sends the request body to NeMo; if a guardrail fires NeMo returns a block message in `choices[0].message.content`, BBR converts that to a `403 Forbidden`. If allowed (empty content), BBR forwards to the real LLM.
+The NeMo pod exposes `/v1/chat/completions`. BBR sends the request body to NeMo; if a guardrail fires NeMo returns a block message in `choices[0].message.content`, BBR converts that to a `403 Forbidden`. If the content is `"allowed"`, BBR forwards to the real LLM.
 
 ---
 
@@ -67,15 +67,24 @@ nemo-guardrails/
 │   └── 04-injection-detection/   # YARA code/SQLi/template/XSS detection (~600 MB image)
 │
 ├── model-guard-examples/         # guards that include a model for semantic classification
-│   └── 05-llama-guard/           # Llama Guard 3 1B via vLLM (single pod, 2 containers)
+│   ├── 05-llama-guard/           # Llama Guard 3 1B via vLLM (single pod, 2 containers)
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   ├── config.yml
+│   │   ├── config.co
+│   │   ├── prompts.yml
+│   │   └── k8s/
+│   │       ├── nemo-deployment.yaml  # single pod: NeMo (port 8000) + vLLM sidecar (port 8001, HF token required)
+│   │       └── nemo-service.yaml
+│   └── 06-classifier-guard/      # L0 Bouncer DeBERTa classifier (single pod, 1 container, ~5ms latency)
 │       ├── Dockerfile
 │       ├── requirements.txt
 │       ├── config.yml
 │       ├── config.co
-│       ├── prompts.yml
+│       ├── actions.py            # custom action: loads L0 Bouncer and runs inference in-process
 │       └── k8s/
-│           ├── nemo-deployment.yaml  # single pod: NeMo (port 8000) + vLLM sidecar (port 8001, HF token required)
-│           └── nemo-service.yaml
+│           ├── deployment.yaml
+│           └── service.yaml
 │
 ├── k8s/                          # shared Kubernetes manifests (namespace, default deployment/service)
 │   ├── namespace.yaml
@@ -136,7 +145,17 @@ nemo-guardrails/
 ./scripts/setup-k8s-nemo.sh --rebuild --config-dir guard-only-examples/04-injection-detection
 ```
 
-**Deploy the model-guard example** (single pod, NeMo + vLLM sidecar):
+**Deploy the classifier-guard example** (single pod, in-process DeBERTa classifier, ~5ms latency):
+
+```bash
+# No HuggingFace token needed — model is public
+./scripts/setup-k8s-nemo.sh --rebuild --config-dir model-guard-examples/06-classifier-guard
+
+# To deploy to a specific cluster:
+./scripts/setup-k8s-nemo.sh --cluster bbr-test --rebuild --config-dir model-guard-examples/06-classifier-guard
+```
+
+**Deploy the Llama Guard example** (single pod, NeMo + vLLM sidecar, ~2-3 min/request on CPU):
 
 ```bash
 # Requires a HuggingFace token — see model-guard-examples/05-llama-guard/README.md

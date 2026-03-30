@@ -270,7 +270,7 @@ if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
     DID_LOAD_IMAGE="$IMAGE_TAG"
 
     # Only pull/load the vLLM image when the config's k8s manifests actually use it
-    # (e.g. model-guard-examples/05-llama-guard). Configs like classifier-guard have
+    # (e.g. model-guard-examples/05-llama-guard). Configs like 06-classifier-guard have
     # their own k8s/ dir but don't need vLLM.
     VLLM_IMAGE="public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.17.1"
     if [[ "$DEPLOY_TIER" == "model-guard" ]] && grep -rq "vllm" "$CONFIG_K8S_DIR/" 2>/dev/null; then
