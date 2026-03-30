@@ -269,10 +269,11 @@ if [[ -n "$REBUILD" ]] || [[ -z "$SKIP_BUILD" ]]; then
     echo "      Load done ($IMAGE_TAG)."
     DID_LOAD_IMAGE="$IMAGE_TAG"
 
-    # Model-guard: pre-load the vLLM image into Kind so the sidecar container
-    # doesn't need to pull from ECR on the Kind node.
-    if [[ "$DEPLOY_TIER" == "model-guard" ]]; then
-      VLLM_IMAGE="public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.17.1"
+    # Only pull/load the vLLM image when the config's k8s manifests actually use it
+    # (e.g. model-guard-examples/05-llama-guard). Configs like classifier-guard have
+    # their own k8s/ dir but don't need vLLM.
+    VLLM_IMAGE="public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.17.1"
+    if [[ "$DEPLOY_TIER" == "model-guard" ]] && grep -rq "vllm" "$CONFIG_K8S_DIR/" 2>/dev/null; then
       echo "      [model-guard] Pulling and loading $VLLM_IMAGE into cluster..."
       echo "      NOTE: The Llama Guard 3 1B model (~700 MB) is downloaded from HuggingFace at container startup."
       if [[ "$CONTAINER_RUNTIME" == "docker" ]]; then
